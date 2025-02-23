@@ -3,9 +3,9 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pipes"
-version = "0.1.0"
-description = "A project for pipe transformations"
+name = "pypeduct"
+version = "0.1.1"
+description = "A project for pipe transformations, elixir-style. "
 authors = [
     { name = "Anselm Kiefner", email = "pipes-github@anselm.kiefner.de" }
 ]
@@ -14,10 +14,10 @@ license = { file = "LICENSE" }
 requires-python = ">=3.12"
 
 [project.urls]
-"Homepage" = "https://github.com/amogorkon/pipes"
+"Homepage" = "https://github.com/amogorkon/pypeduct"
 
 [tool.setuptools]
-packages = ["src"]
+packages = { find = { where = ["src"] } }
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.rst"]
