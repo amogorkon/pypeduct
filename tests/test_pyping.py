@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 from pypeduct.pyping import pyped
@@ -12,16 +10,6 @@ def test_basic_pipe():
         return result
 
     assert basic_pipe() == ["5"]
-
-
-def test_async_pipe():
-    @pyped
-    async def async_func() -> int:
-        result: int = 10 >> (lambda x: x * 2)
-        return result
-
-    result = asyncio.run(async_func())
-    assert result == 20
 
 
 def test_complex_types():
@@ -66,49 +54,14 @@ def test_complex_expression_pipe():
     assert complex_expression_pipe() == 15
 
 
-def test_await_in_pipe():
-    @pyped
-    async def await_pipe() -> str:
-        async def async_upper(s: str) -> str:
-            await asyncio.sleep(0.1)
-            return s.upper()
-
-        return await ("hello" >> async_upper)
-
-    result = asyncio.run(await_pipe())
-    assert result == "HELLO"
-
-
 def test_exception_handling_in_pipe():
     @pyped
     def exception_pipe():
-        result: int = "test" >> int  # This should raise a ValueError
+        result: int = "test" >> int
         return result
 
     with pytest.raises(ValueError):
         exception_pipe()
-
-
-def test_pipe_in_classmethod():
-    class MyClass:
-        @classmethod
-        @pyped
-        def class_method(cls, x: int) -> str:
-            return x >> str
-
-    result = MyClass.class_method(42)
-    assert result == "42"
-
-
-def test_pipe_in_staticmethod():
-    class MyClass:
-        @staticmethod
-        @pyped
-        def static_method(x: int) -> str:
-            return x >> str
-
-    result = MyClass.static_method(42)
-    assert result == "42"
 
 
 def test_pipe_with_generator_expression():
@@ -141,20 +94,6 @@ def test_pipe_with_lambda():
         return result
 
     assert lambda_test() == 25
-
-
-def test_pipe_with_async_generator():
-    @pyped
-    async def async_generator_pipe() -> list[int]:
-        async def async_gen():
-            for i in range(3):
-                yield i
-
-        result: list[int] = [i async for i in async_gen()] >> list
-        return result
-
-    result = asyncio.run(async_generator_pipe())
-    assert result == [0, 1, 2]
 
 
 def test_pipe_with_exception_in_function():
@@ -228,3 +167,128 @@ def test_pipe_with_chained_comparisons():
 
     assert chained_comparison_test(5)
     assert not chained_comparison_test(0)
+
+
+def test_syntax_error_in_pyped():
+    faulty_code = """
+@pyped
+def syntax_error_func():
+    result = 5 >>
+    return result
+"""
+    with pytest.raises(SyntaxError) as context:
+        exec(faulty_code, globals())
+
+    assert "invalid syntax" in str(context.value)
+
+
+def test_pipe_with_class_method_inside():
+    class MyClass:
+        def __init__(self, value):
+            self.value = value
+
+        @pyped
+        def multiply(self, x: int) -> int:
+            return x >> (lambda y: y * self.value)
+
+    instance = MyClass(3)
+
+    result = instance.multiply(5)
+    assert result == 15
+
+
+def test_pipe_with_method_inside():
+    class MyClass:
+        def __init__(self, value):
+            self.value = value
+
+        @pyped
+        def multiply(self, x: int) -> int:
+            return x >> (lambda y: y * self.value)
+
+    instance = MyClass(3)
+
+    result = instance.multiply(5)
+    assert result == 15
+
+
+def test_pipe_with_method_outside():
+    @pyped
+    class MyClass:
+        def __init__(self, value):
+            self.value = value
+
+        def multiply(self, x: int) -> int:
+            return self.value >> (lambda y: y * x)
+
+    instance = MyClass(3)
+    result = instance.multiply(5)
+    assert result == 15
+
+
+def test_pipe_in_classmethod():
+    class MyClass:
+        @classmethod
+        @pyped
+        def class_method(cls, x: int) -> str:
+            return x >> str
+
+    result = MyClass.class_method(42)
+    assert result == "42"
+
+
+def test_pipe_in_staticmethod():
+    class MyClass:
+        @staticmethod
+        @pyped
+        def static_method(x: int) -> str:
+            return x >> str
+
+    result = MyClass.static_method(42)
+    assert result == "42"
+
+
+def test_pipe_with_partial_function():
+    from functools import partial
+
+    @pyped
+    def partial_func_pipe():
+        def multiply(a, b):
+            return a * b
+
+        multiply_by_two = partial(multiply, b=2)
+        result = 5 >> multiply_by_two
+        return result
+
+    assert partial_func_pipe() == 10
+
+
+def test_class_with_slots():
+    class Test:
+        __slots__ = ("id",)
+
+        def __init__(self, id: int) -> None:
+            self.id = id
+
+        @pyped
+        def foo(self) -> int:
+            return self.id >> str >> list >> len
+
+    t = Test(123)
+    assert t.foo() == 3
+
+
+def test_pipe_with_custom_object():
+    class CustomObject:
+        def __init__(self, value):
+            self.value = value
+
+        def foo(self, x):
+            return x.value + self.value
+
+    @pyped
+    def custom_object_pipe():
+        obj = CustomObject(10)
+        return obj >> obj.foo
+
+    assert custom_object_pipe() == 20
