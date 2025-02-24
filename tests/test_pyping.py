@@ -8,7 +8,7 @@ from pypeduct.pyping import pyped
 def test_basic_pipe():
     @pyped
     def basic_pipe() -> list[str]:
-        result = 5 >> str << list
+        result: list[str] = 5 >> str << list
         return result
 
     assert basic_pipe() == ["5"]
@@ -17,7 +17,8 @@ def test_basic_pipe():
 def test_async_pipe():
     @pyped
     async def async_func() -> int:
-        return 10 >> (lambda x: x * 2)
+        result: int = 10 >> (lambda x: x * 2)
+        return result
 
     result = asyncio.run(async_func())
     assert result == 20
@@ -37,10 +38,10 @@ def test_complex_types():
 def test_rshift_operator():
     @pyped
     def rshift_pipe() -> str:
-        def wrap(text):
+        def wrap(text: str) -> str:
             return f"<{text}>"
 
-        result = "content" >> wrap
+        result: str = "content" >> wrap
         return result
 
     assert rshift_pipe() == "<content>"
@@ -49,7 +50,7 @@ def test_rshift_operator():
 def test_nested_pyped():
     @pyped
     def nested_pyped() -> int:
-        result = (5 >> (lambda x: x + 2)) >> (lambda x: x * 3)
+        result: int = (5 >> (lambda x: x + 2)) >> (lambda x: x * 3)
         return result
 
     assert nested_pyped() == 21
@@ -58,8 +59,8 @@ def test_nested_pyped():
 def test_complex_expression_pipe():
     @pyped
     def complex_expression_pipe() -> int:
-        expr = (2 + 3) * 4
-        result = expr >> (lambda x: x - 5)
+        expr: int = (2 + 3) * 4
+        result: int = expr >> (lambda x: x - 5)
         return result
 
     assert complex_expression_pipe() == 15
@@ -68,7 +69,7 @@ def test_complex_expression_pipe():
 def test_await_in_pipe():
     @pyped
     async def await_pipe() -> str:
-        async def async_upper(s):
+        async def async_upper(s: str) -> str:
             await asyncio.sleep(0.1)
             return s.upper()
 
@@ -81,7 +82,7 @@ def test_await_in_pipe():
 def test_exception_handling_in_pipe():
     @pyped
     def exception_pipe():
-        result = "test" >> int  # This should raise a ValueError
+        result: int = "test" >> int  # This should raise a ValueError
         return result
 
     with pytest.raises(ValueError):
@@ -112,12 +113,12 @@ def test_pipe_in_staticmethod():
 
 def test_pipe_with_generator_expression():
     @pyped
-    def generator_pipe():
-        def square(x):
+    def generator_pipe() -> list[int]:
+        def square(x: int) -> int:
             return x * x
 
         gen = (i for i in range(5))
-        result = list(gen) >> (lambda lst: [square(x) for x in lst])
+        result: list[int] = list(gen) >> (lambda lst: [square(x) for x in lst])
         return result
 
     assert generator_pipe() == [0, 1, 4, 9, 16]
@@ -125,9 +126,9 @@ def test_pipe_with_generator_expression():
 
 def test_variable_scope_in_exec():
     @pyped
-    def context_test():
-        var = "hello"
-        result = var >> str.upper
+    def context_test() -> str:
+        var: str = "hello"
+        result: str = var >> str.upper
         return result
 
     assert context_test() == "HELLO"
@@ -135,8 +136,8 @@ def test_variable_scope_in_exec():
 
 def test_pipe_with_lambda():
     @pyped
-    def lambda_test():
-        result = 5 >> (lambda x: x * x)
+    def lambda_test() -> int:
+        result: int = 5 >> (lambda x: x * x)
         return result
 
     assert lambda_test() == 25
@@ -144,12 +145,12 @@ def test_pipe_with_lambda():
 
 def test_pipe_with_async_generator():
     @pyped
-    async def async_generator_pipe():
+    async def async_generator_pipe() -> list[int]:
         async def async_gen():
             for i in range(3):
                 yield i
 
-        result = [i async for i in async_gen()] >> list
+        result: list[int] = [i async for i in async_gen()] >> list
         return result
 
     result = asyncio.run(async_generator_pipe())
@@ -159,10 +160,10 @@ def test_pipe_with_async_generator():
 def test_pipe_with_exception_in_function():
     @pyped
     def exception_in_function():
-        def faulty_function(x):
+        def faulty_function(x: int):
             raise ValueError("Test exception")
 
-        result = 5 >> faulty_function
+        result: int = 5 >> faulty_function
         return result
 
     with pytest.raises(ValueError):
@@ -171,8 +172,8 @@ def test_pipe_with_exception_in_function():
 
 def test_pipe_with_none():
     @pyped
-    def none_pipe():
-        result = None >> (lambda x: x is None)
+    def none_pipe() -> bool:
+        result: bool = None >> (lambda x: x is None)
         return result
 
     assert none_pipe()
@@ -189,21 +190,22 @@ def test_pipe_with_type_annotations():
 
 def test_pipe_with_kwargs_in_function():
     @pyped
-    def kwargs_function():
-        def greet(name, greeting="Hello"):
+    def kwargs_function() -> str:
+        def greet(name: str, greeting: str = "Hello") -> str:
             return f"{greeting}, {name}!"
 
-        result = "Alyz" << greet(greeting="Hi")
-        assert result == "Alyz" >> greet(greeting="Hi")
-        return result
+        left_result: str = "Alyz" << greet(greeting="Hi")
+        right_result: str = "Alyz" >> greet(greeting="Hi")
+        assert left_result == right_result
+        return right_result
 
     assert kwargs_function() == "Hi, Alyz!"
 
 
 def test_pipe_with_multiple_pyped_in_one_expression():
     @pyped
-    def multiple_pyped():
-        result = 5 >> (lambda x: x + 1) >> (lambda x: x * 2) << (lambda x: x - 3)
+    def multiple_pyped() -> int:
+        result: int = 5 >> (lambda x: x + 1) >> (lambda x: x * 2) << (lambda x: x - 3)
         return result
 
     assert multiple_pyped() == 9
@@ -211,8 +213,8 @@ def test_pipe_with_multiple_pyped_in_one_expression():
 
 def test_pipe_with_unary_operator():
     @pyped
-    def unary_operator_test():
-        result = (-5) >> abs
+    def unary_operator_test() -> int:
+        result: int = (-5) >> abs
         return result
 
     assert unary_operator_test() == 5
@@ -221,7 +223,8 @@ def test_pipe_with_unary_operator():
 def test_pipe_with_chained_comparisons():
     @pyped
     def chained_comparison_test(x: int) -> bool:
-        return (1 < x < 10) >> (lambda x: x)
+        result: bool = (1 < x < 10) >> (lambda x: x)
+        return result
 
     assert chained_comparison_test(5)
     assert not chained_comparison_test(0)
