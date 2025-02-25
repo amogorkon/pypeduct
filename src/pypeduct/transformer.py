@@ -4,10 +4,10 @@ from ast import (
     AST,
     Assign,
     AsyncFunctionDef,
-    Attribute,
     BinOp,
     Call,
     FunctionDef,
+    Lambda,
     Load,
     LShift,
     Name,
@@ -15,7 +15,7 @@ from ast import (
     NodeTransformer,
     RShift,
     Store,
-    copy_location,
+    arguments,
     stmt,
 )
 from builtins import ExceptionGroup
@@ -57,94 +57,100 @@ class PipeTransformError(ExceptionGroup):
 @final
 class PipeTransformer(NodeTransformer):
     def __init__(self) -> None:
-        self.parent_stack: list[AST] = []
-        self.current_stmt: stmt | None = None
-        self.current_assignments: list[Assign] = []  # Track assignments per statement
-
-    def visit(self, node: AST) -> AST:
-        self.parent_stack.append(node)
-        try:
-            return super().visit(node)
-        finally:
-            self.parent_stack.pop()
+        self.current_assignments: list[Assign] = []
 
     def visit_FunctionDef(self, node: FunctionDef) -> FunctionDef:
-        new_body = []
-        for stmt in node.body:
-            self.current_stmt = stmt
-            self.current_assignments = []  # Reset for each statement
-            new_stmt = self.visit(stmt)
-            # Prepend collected assignments to the new body
-            new_body.extend(self.current_assignments)
-            if isinstance(new_stmt, list):
-                new_body.extend(new_stmt)
-            else:
-                new_body.append(new_stmt)
-        self.current_stmt = None
-        node.body = new_body
+        node.body = self._transform_body(node.body)
         return node
 
     def visit_AsyncFunctionDef(self, node: AsyncFunctionDef) -> AsyncFunctionDef:
-        new_body = []
-        for stmt in node.body:
-            self.current_stmt = stmt
-            self.current_assignments = []  # Reset for each statement
-            new_stmt = self.visit(stmt)
-            new_body.extend(self.current_assignments)
-            if isinstance(new_stmt, list):
-                new_body.extend(new_stmt)
-            else:
-                new_body.append(new_stmt)
-        self.current_stmt = None
-        node.body = new_body
+        node.body = self._transform_body(node.body)
         return node
+
+    def _transform_body(self, body: list[stmt]) -> list[stmt]:
+        new_body: list[stmt] = []
+        for statement in body:
+            self.current_assignments = []
+            transformed_stmt: stmt = self.visit(statement)
+            assert isinstance(transformed_stmt, (stmt, list))
+            new_body.extend(self.current_assignments)
+            if isinstance(transformed_stmt, list):
+                new_body.extend(transformed_stmt)
+            else:
+                new_body.append(transformed_stmt)
+        return new_body
 
     def visit_BinOp(self, node: BinOp) -> AST:
         if not isinstance(node.op, (LShift, RShift)):
-            return node
+            return self.generic_visit(node)
 
-        if isinstance(node.left, NamedExpr):
-            return self._transform_walrus_pipeline(node)
-        return self._transform_regular_pipeline(node)
+        right = node.right  # Visit right first in case it has named expressions
+        if isinstance(node.right, NamedExpr):
+            right_target = node.right.target
+            right_value = self.visit(node.right.value)
 
-    def _transform_walrus_pipeline(self, node: BinOp) -> AST:
-        target = node.left.target
-        value = node.left.value
+            if hasattr(right_target, "ctx"):
+                right_target.ctx = Store()
+
+            assign_func = Assign(targets=[right_target], value=right_value)
+            self.current_assignments.append(assign_func)
+            right_func_name = Name(id=right_target.id, ctx=Load())
+        else:
+            right_func_name = self.visit(right)
+
+        left = self.visit(node.left)
+
+        if isinstance(node.right, NamedExpr):
+            call = Call(
+                func=right_func_name,
+                args=[left],
+                keywords=[],
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            )
+            assign_result = Assign(targets=[right_target], value=call)
+            self.current_assignments.append(assign_result)
+            return Name(id=right_target.id, ctx=Load())
+        else:
+            return self._transform_regular_pipeline(node, left, right_func_name)
+
+    def _handle_named_expr(self, named_expr: NamedExpr) -> Name:
+        target = named_expr.target
+        value = self.visit(named_expr.value)
+
+        if isinstance(value, Lambda):
+            function_name = f"_lambda_{target.id}"
+            args = arguments(
+                posonlyargs=[],
+                args=value.args.args,
+                kwonlyargs=value.args.kwonlyargs,
+                kw_defaults=value.args.kw_defaults,
+                defaults=value.args.defaults,
+                vararg=value.args.vararg,
+                kwarg=value.args.kwarg,
+            )
+            function_def = FunctionDef(
+                name=function_name,
+                args=args,
+                body=value.body if isinstance(value.body, list) else [value.body],
+                decorator_list=[],
+                returns=None,
+            )
+            self.current_assignments.append(function_def)
+            callable_name = Name(id=function_name, ctx=Load())
+            assign_value = Call(func=callable_name, args=[], keywords=[])
+        else:
+            assign_value = value
+
         if hasattr(target, "ctx"):
             target.ctx = Store()
 
-        assign = copy_location(Assign(targets=[target], value=self.visit(value)), node)
-
-        # Convert target to Load context for pipeline
-        if isinstance(target, Name):
-            target_load = copy_location(Name(id=target.id, ctx=Load()), target)
-        elif isinstance(target, Attribute):
-            target_load = copy_location(
-                Attribute(value=target.value, attr=target.attr, ctx=Load()),
-                target,
-            )
-        else:
-            target_load = target
-            if hasattr(target_load, "ctx"):
-                target_load.ctx = Load()
-
-        # Collect the assignment instead of inserting into function body
+        assign = Assign(targets=[target], value=assign_value)
         self.current_assignments.append(assign)
 
-        new_node = copy_location(
-            BinOp(
-                left=target_load,
-                op=node.op,
-                right=node.right,
-            ),
-            node,
-        )
-        return self.visit(new_node)
+        return Name(id=target.id, ctx=Load())
 
-    def _transform_regular_pipeline(self, node: BinOp) -> AST:
-        left = self.visit(node.left)
-        right = self.visit(node.right)
-
+    def _transform_regular_pipeline(self, node: BinOp, left, right) -> AST:
         if not isinstance(right, Call):
             right = Call(
                 func=right,

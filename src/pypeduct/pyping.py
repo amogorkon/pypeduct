@@ -1,3 +1,4 @@
+# pyping.py (modified for debugging - print AST for classes)
 from __future__ import annotations
 
 import ast
@@ -37,13 +38,14 @@ def pyped(func_or_class: T) -> T:
 
     if inspect.iscoroutinefunction(func_or_class):
         ast.increment_lineno(tree, func_or_class.__code__.co_firstlineno - 1)
+
+    # Attempt to CLEAR the decorator list for FunctionDef, ClassDef, AsyncFunctionDef
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
-            node.decorator_list = [
-                d
-                for d in node.decorator_list
-                if not (isinstance(d, ast.Name) and d.id == "pyped")
-            ]
+            node.decorator_list = []  # Clear the decorator list
+            if isinstance(node, ast.ClassDef):  # ADDED: Print AST for classes
+                print("AST for class:")
+                print(ast.unparse(tree))
 
     ast.fix_missing_locations(tree)
     code = compile(

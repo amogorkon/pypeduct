@@ -1,22 +1,18 @@
 from pyping import pyped
 
 
-def test_pipe_with_walrus():
+def test_class_pipe_in_property():
     @pyped
-    def foo():
-        x = (
-            5
-            >> (lambda x: x * 2)
-            >> (lambda x: x + 1) >> (y := )
-            >> (lambda x: x**2)
-            >> (lambda x: x - 1)
-            >> (lambda x: x / 2)
-        )
+    class MyClass:
+        def __init__(self, value: int) -> None:
+            self._value = value
 
-        print(y)
-        return x
+        @property
+        def value(self) -> str:
+            return self._value >> str
 
-    return foo()
+    instance = MyClass(100)
+    assert instance.value == "100"
 
 
-print(test_pipe_with_walrus())
+test_class_pipe_in_property()
