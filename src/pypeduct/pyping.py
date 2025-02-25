@@ -22,19 +22,17 @@ def pyped(func_or_class: T) -> T:
     try:
         source = inspect.getsource(func_or_class)
     except OSError:
-        if inspect.isfunction(func_or_class):
-            code = func_or_class.__code__
-            lines = linecache.getlines(code.co_filename)
-            source = "".join(
-                lines[
-                    code.co_firstlineno - 1 : code.co_firstlineno
-                    + code.co_code.co_argcount
-                ]
-            )
-            source = dedent(source.split(":", 1)[1].strip())
-        else:
+        if not inspect.isfunction(func_or_class):
             raise
 
+        code = func_or_class.__code__
+        lines = linecache.getlines(code.co_filename)
+        source = "".join(
+            lines[
+                code.co_firstlineno - 1 : code.co_firstlineno + code.co_code.co_argcount
+            ]
+        )
+        source = dedent(source.split(":", 1)[1].strip())
     tree = PipeTransformer().visit(ast.parse(dedent(source)))
 
     if inspect.iscoroutinefunction(func_or_class):
@@ -57,8 +55,21 @@ def pyped(func_or_class: T) -> T:
 
 if __name__ == "__main__":
 
-    @pyped
-    def test_function(x: int) -> int:
-        return x >> str >> list >> len
+    class CustomObject:
+        def __init__(self, value):
+            self.value = value
 
-    print(test_function(123))
+        def increment(self, _):
+            self.value += 1
+            return self
+
+        def foo(self, x):
+            return x.value * 2
+
+    @pyped
+    def custom_object_pipe():
+        (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
+        return obj
+
+    result = custom_object_pipe()
+    print(result)

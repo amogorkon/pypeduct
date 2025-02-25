@@ -23,6 +23,16 @@ def test_complex_types():
     assert complex_pipe() == ("3", 1, 3)
 
 
+def test_pipeline_inside_comprehension():
+    @pyped
+    def pipeline_function(x):
+        return [i >> (lambda x: x**2) >> str for i in range(5)]
+
+    x = pipeline_function(5)
+
+    assert x == ["0", "1", "4", "9", "16"]
+
+
 def test_rshift_operator():
     @pyped
     def rshift_pipe() -> str:
@@ -30,6 +40,7 @@ def test_rshift_operator():
             return f"<{text}>"
 
         result: str = "content" >> wrap
+        assert 3 >> 1 == 1
         return result
 
     assert rshift_pipe() == "<content>"
@@ -292,3 +303,53 @@ def test_pipe_with_custom_object():
         return obj >> obj.foo
 
     assert custom_object_pipe() == 20
+
+
+def test_pipe_with_custom_object_walrus():
+    class CustomObject:
+        def __init__(self, value):
+            self.value = value
+
+        def increment(self, _):
+            self.value += 1
+            return self
+
+        def foo(self, x):
+            return x.value * 2
+
+    @pyped
+    def custom_object_pipe():
+        return (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
+
+    assert custom_object_pipe() == 24
+
+
+def test_side_effects_order():
+    side_effects = []
+
+    def func_a(x):
+        side_effects.append("A")
+        return x + 1
+
+    def func_b(x, y):
+        side_effects.append("B")
+        return x * y
+
+    @pyped
+    def pipeline_with_side_effects():
+        return (a := 3) >> func_a >> func_b(a)
+
+    result = pipeline_with_side_effects()
+    assert result == 12  # (3 + 1) * 3
+    assert side_effects == ["A", "B"]
+
+
+@pyped
+def test_pipeline_in_nested_functions():
+    def outer_function():
+        def inner_function():
+            return (x := 5) >> (lambda y: y * y)
+
+        return inner_function()
+
+    assert outer_function() == 25
