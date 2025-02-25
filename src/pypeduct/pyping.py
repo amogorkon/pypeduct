@@ -51,25 +51,3 @@ def pyped(func_or_class: T) -> T:
     )
     exec(code, ctx)
     return ctx[tree.body[0].name]
-
-
-if __name__ == "__main__":
-
-    class CustomObject:
-        def __init__(self, value):
-            self.value = value
-
-        def increment(self, _):
-            self.value += 1
-            return self
-
-        def foo(self, x):
-            return x.value * 2
-
-    @pyped
-    def custom_object_pipe():
-        (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
-        return obj
-
-    result = custom_object_pipe()
-    print(result)
