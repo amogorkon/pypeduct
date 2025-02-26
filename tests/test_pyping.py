@@ -327,17 +327,6 @@ def test_side_effects_order():
     assert side_effects == ["A", "B"]
 
 
-@pyped
-def test_pipeline_in_nested_functions() -> int:
-    def outer_function() -> int:
-        def inner_function() -> int:
-            return (x := 5) >> (lambda y: y * y)
-
-        return inner_function()
-
-    assert outer_function() == 25
-
-
 def test_pipeline_inside_conditional():
     @pyped
     def pipeline_in_conditional(flag: bool) -> str:
@@ -539,3 +528,25 @@ def test_method_pipe_in_property():
 
     instance = MyClass(100)
     assert instance.value == "100"
+
+
+def test_pipeline_in_nested_functions() -> int:
+    @pyped
+    def outer_function() -> int:
+        def inner_function() -> int:
+            return (x := 5) >> (lambda y: y * y)
+
+        return inner_function()
+
+    assert outer_function() == 25
+
+
+@pyped
+def test_pipeline_in_nested_functions2() -> int:
+    def outer_function() -> int:
+        def inner_function() -> int:
+            return (x := 5) >> (lambda y: y * y)
+
+        return inner_function()
+
+    assert outer_function() == 25

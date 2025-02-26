@@ -3,7 +3,6 @@ from __future__ import annotations
 from ast import (
     AST,
     Assign,
-    AsyncFunctionDef,
     BinOp,
     Call,
     FunctionDef,
@@ -13,10 +12,8 @@ from ast import (
     Name,
     NamedExpr,
     NodeTransformer,
+    Return,
     RShift,
-    Store,
-    arguments,
-    stmt,
 )
 from builtins import ExceptionGroup
 from collections.abc import Sequence
@@ -57,109 +54,92 @@ class PipeTransformError(ExceptionGroup):
 @final
 class PipeTransformer(NodeTransformer):
     def __init__(self) -> None:
+        self.lambda_counter = 0
         self.current_assignments: list[Assign] = []
 
     def visit_FunctionDef(self, node: FunctionDef) -> FunctionDef:
-        node.body = self._transform_body(node.body)
-        return node
-
-    def visit_AsyncFunctionDef(self, node: AsyncFunctionDef) -> AsyncFunctionDef:
-        node.body = self._transform_body(node.body)
-        return node
-
-    def _transform_body(self, body: list[stmt]) -> list[stmt]:
-        new_body: list[stmt] = []
-        for statement in body:
+        new_body: Sequence[Assign | AST] = []
+        for stmt in node.body:
             self.current_assignments = []
-            transformed_stmt: stmt = self.visit(statement)
-            assert isinstance(transformed_stmt, (stmt, list))
+            processed_stmt = self.generic_visit(stmt)
             new_body.extend(self.current_assignments)
-            if isinstance(transformed_stmt, list):
-                new_body.extend(transformed_stmt)
-            else:
-                new_body.append(transformed_stmt)
-        return new_body
+            new_body.append(processed_stmt)
+        self.current_assignments = []
+        node.body = new_body
+        return node
+
+    def _generate_lambda_name(self) -> str:
+        self.lambda_counter += 1
+        return f"_lambda_{self.lambda_counter}"
 
     def visit_BinOp(self, node: BinOp) -> AST:
         if not isinstance(node.op, (LShift, RShift)):
             return self.generic_visit(node)
 
-        right = node.right  # Visit right first in case it has named expressions
-        if isinstance(node.right, NamedExpr):
-            right_target = node.right.target
-            right_value = self.visit(node.right.value)
-
-            if hasattr(right_target, "ctx"):
-                right_target.ctx = Store()
-
-            assign_func = Assign(targets=[right_target], value=right_value)
-            self.current_assignments.append(assign_func)
-            right_func_name = Name(id=right_target.id, ctx=Load())
-        else:
-            right_func_name = self.visit(right)
-
+        right = self.visit(node.right)
         left = self.visit(node.left)
 
         if isinstance(node.right, NamedExpr):
-            call = Call(
-                func=right_func_name,
-                args=[left],
-                keywords=[],
+            return self._construct_function_call(node, left)
+        return self._build_pipeline_call(node, left, right)
+
+    def _construct_function_call(self, node, left):
+        right_target = node.right.target
+        named_expr_value = node.right.value
+
+        func_to_call: AST = None
+
+        if isinstance(named_expr_value, Lambda):
+            lambda_name = self._generate_lambda_name()
+            func_def = self._lambda_to_named_function(lambda_name, named_expr_value)
+            self.current_assignments.append(func_def)
+            func_to_call = Name(id=lambda_name, ctx=Load())
+
+        if func_to_call is None:
+            func_to_call = self.visit(named_expr_value)
+
+        call = Call(
+            func=func_to_call,
+            args=[left],
+            keywords=[],
+            lineno=node.lineno,
+            col_offset=node.col_offset,
+        )
+
+        result_assign = Assign(
+            targets=[right_target],
+            value=call,
+            lineno=node.lineno,
+            col_offset=node.col_offset,
+        )
+        self.current_assignments.append(result_assign)
+
+        return Name(id=right_target.id, ctx=Load())
+
+    def _lambda_to_named_function(self, name: str, lambda_node: Lambda) -> FunctionDef:
+        """Convert lambda to a named function definition."""
+        return FunctionDef(
+            name=name,
+            args=lambda_node.args,
+            body=[Return(value=self.visit(lambda_node.body))],
+            decorator_list=[],
+            returns=None,
+        )
+
+    def _build_pipeline_call(self, node: BinOp, left: AST, right: AST) -> AST:
+        """Build pipeline call, merging left value into existing call arguments if needed"""
+        if isinstance(right, Call):
+            return Call(
+                func=right.func,
+                args=[left] + right.args,
+                keywords=right.keywords,
                 lineno=node.lineno,
                 col_offset=node.col_offset,
             )
-            assign_result = Assign(targets=[right_target], value=call)
-            self.current_assignments.append(assign_result)
-            return Name(id=right_target.id, ctx=Load())
-        else:
-            return self._transform_regular_pipeline(node, left, right_func_name)
-
-    def _handle_named_expr(self, named_expr: NamedExpr) -> Name:
-        target = named_expr.target
-        value = self.visit(named_expr.value)
-
-        if isinstance(value, Lambda):
-            function_name = f"_lambda_{target.id}"
-            args = arguments(
-                posonlyargs=[],
-                args=value.args.args,
-                kwonlyargs=value.args.kwonlyargs,
-                kw_defaults=value.args.kw_defaults,
-                defaults=value.args.defaults,
-                vararg=value.args.vararg,
-                kwarg=value.args.kwarg,
-            )
-            function_def = FunctionDef(
-                name=function_name,
-                args=args,
-                body=value.body if isinstance(value.body, list) else [value.body],
-                decorator_list=[],
-                returns=None,
-            )
-            self.current_assignments.append(function_def)
-            callable_name = Name(id=function_name, ctx=Load())
-            assign_value = Call(func=callable_name, args=[], keywords=[])
-        else:
-            assign_value = value
-
-        if hasattr(target, "ctx"):
-            target.ctx = Store()
-
-        assign = Assign(targets=[target], value=assign_value)
-        self.current_assignments.append(assign)
-
-        return Name(id=target.id, ctx=Load())
-
-    def _transform_regular_pipeline(self, node: BinOp, left, right) -> AST:
-        if not isinstance(right, Call):
-            right = Call(
-                func=right,
-                args=[],
-                keywords=[],
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-
-        insert_pos = 0 if isinstance(node.op, RShift) else len(right.args)
-        right.args.insert(insert_pos, left)
-        return right
+        return Call(
+            func=right,
+            args=[left],
+            keywords=[],
+            lineno=node.lineno,
+            col_offset=node.col_offset,
+        )

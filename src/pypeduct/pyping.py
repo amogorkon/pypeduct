@@ -1,4 +1,3 @@
-# pyping.py (modified for debugging - print AST for classes)
 from __future__ import annotations
 
 import ast
@@ -11,14 +10,27 @@ from pypeduct.transformer import PipeTransformer
 
 T = TypeVar("T", bound=Callable[..., Any] | type[Any])
 
+VERBOSE = False
 
-def pyped(func_or_class: T) -> T:
-    """Decorator transforming >>/<< operators into pipeline operations."""
-    caller_frame = inspect.currentframe().f_back
+
+def pyped(func_or_class: T | None = None) -> T | Callable[[T], T]:
+    """Decorator transforming >>/<< operators into pipeline operations with configurable options."""
+
+    caller_frame = inspect.currentframe()
+    assert caller_frame is not None
+    caller_frame = caller_frame.f_back
+    assert caller_frame is not None
     ctx = {
         **caller_frame.f_globals,
         **caller_frame.f_locals,
     }
+    # Capture closure variables from the original function
+    if inspect.isfunction(func_or_class):
+        closure = func_or_class.__closure__
+        if closure is not None:
+            free_vars = func_or_class.__code__.co_freevars
+            for name, cell in zip(free_vars, closure):
+                ctx[name] = cell.cell_contents
 
     try:
         source = inspect.getsource(func_or_class)
@@ -30,22 +42,28 @@ def pyped(func_or_class: T) -> T:
         lines = linecache.getlines(code.co_filename)
         source = "".join(
             lines[
-                code.co_firstlineno - 1 : code.co_firstlineno + code.co_code.co_argcount
+                code.co_firstlineno - 1 : code.co_firstlineno
+                + code.co_code.co_argcount  # type: ignore
             ]
         )
         source = dedent(source.split(":", 1)[1].strip())
-    tree = PipeTransformer().visit(ast.parse(dedent(source)))
+
+    transformer = PipeTransformer()
+
+    tree = transformer.visit(ast.parse(dedent(source)))
+
+    if VERBOSE:
+        transformed_code = ast.unparse(tree)
+        print(f"\n----- Transformed Code for: {func_or_class.__name__} -----")
+        print(transformed_code)
+        print("----- End Transformed Code -----\n")
 
     if inspect.iscoroutinefunction(func_or_class):
         ast.increment_lineno(tree, func_or_class.__code__.co_firstlineno - 1)
 
-    # Attempt to CLEAR the decorator list for FunctionDef, ClassDef, AsyncFunctionDef
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
-            node.decorator_list = []  # Clear the decorator list
-            if isinstance(node, ast.ClassDef):  # ADDED: Print AST for classes
-                print("AST for class:")
-                print(ast.unparse(tree))
+            node.decorator_list = []
 
     ast.fix_missing_locations(tree)
     code = compile(

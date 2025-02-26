@@ -1,18 +1,18 @@
 from pyping import pyped
 
 
-def test_class_pipe_in_property():
+def test_pipe_with_kwargs_in_function():
     @pyped
-    class MyClass:
-        def __init__(self, value: int) -> None:
-            self._value = value
+    def kwargs_function() -> str:
+        def greet(name: str, greeting: str = "Hello") -> str:
+            return f"{greeting}, {name}!"
 
-        @property
-        def value(self) -> str:
-            return self._value >> str
+        left_result: str = "Alyz" << greet(greeting="Hi")
+        right_result: str = "Alyz" >> greet(greeting="Hi")
+        assert left_result == right_result
+        return right_result
 
-    instance = MyClass(100)
-    assert instance.value == "100"
+    assert kwargs_function() == "Hi, Alyz!"
 
 
-test_class_pipe_in_property()
+test_pipe_with_kwargs_in_function()
