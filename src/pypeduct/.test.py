@@ -1,18 +1,21 @@
+from __future__ import annotations
+
 from pyping import pyped
 
 
-def test_pipe_with_kwargs_in_function():
-    @pyped
-    def kwargs_function() -> str:
-        def greet(name: str, greeting: str = "Hello") -> str:
-            return f"{greeting}, {name}!"
+def test_class_pipe_in_property():
+    @pyped(verbose=True)
+    class MyClass:
+        def __init__(self, value: int) -> None:
+            self._value = value
 
-        left_result: str = "Alyz" << greet(greeting="Hi")
-        right_result: str = "Alyz" >> greet(greeting="Hi")
-        assert left_result == right_result
-        return right_result
+        @property
+        def value(self) -> str:
+            return self._value >> str
 
-    assert kwargs_function() == "Hi, Alyz!"
+    instance = MyClass(100)
+    assert instance.value == "100", print(instance.value)
+    print(instance.value)
 
 
-test_pipe_with_kwargs_in_function()
+test_class_pipe_in_property()

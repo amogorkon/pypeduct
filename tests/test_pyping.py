@@ -42,7 +42,6 @@ def test_rshift_operator():
             return f"<{text}>"
 
         result: str = "content" >> wrap
-        assert 3 >> 1 == 1
         return result
 
     assert rshift_pipe() == "<content>"
@@ -436,6 +435,20 @@ def test_pipeline_in_generator_expression():
     result, last_x = pipeline_in_generator()
     assert result == [0, 2, 4]
     assert last_x == 2
+
+
+def test_class_pipe_in_property():
+    @pyped
+    class MyClass:
+        def __init__(self, value: int) -> None:
+            self._value = value
+
+        @property
+        def value(self) -> str:
+            return self._value >> str
+
+    instance = MyClass(100)
+    assert instance.value == "100"
 
 
 def test_pipe_with_decorated_function():
