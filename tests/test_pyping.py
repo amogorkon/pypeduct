@@ -330,9 +330,9 @@ def test_pipeline_inside_conditional():
     @pyped
     def pipeline_in_conditional(flag: bool) -> str:
         if flag:
-            (msg := "Hello") >> (lambda x: x + " World") >> print
+            (msg := "Hello") >> (lambda x: f"{x} World") >> print
         else:
-            (msg := "Goodbye") >> (lambda x: x + " World") >> print
+            (msg := "Goodbye") >> (lambda x: f"{x} World") >> print
         return msg
 
     assert pipeline_in_conditional(True) == "Hello"
@@ -563,3 +563,22 @@ def test_pipeline_in_nested_functions2() -> int:
         return inner_function()
 
     assert outer_function() == 25
+
+
+def test_pipe_with_custom_object_walrus():
+    class CustomObject:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+        def increment(self, _) -> CustomObject:
+            self.value += 1
+            return self
+
+        def foo(self, x: CustomObject) -> int:
+            return x.value * 2
+
+    @pyped
+    def custom_object_pipe() -> int:
+        return (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
+
+    assert custom_object_pipe() == 24
