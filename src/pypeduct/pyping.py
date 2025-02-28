@@ -48,6 +48,10 @@ def _transform_function(func: Callable, verbose: bool) -> Callable:
 
     try:
         source = inspect.getsource(func)
+        if verbose:
+            print(f"\n----- Original Source for: {func.__name__} -----")
+            print(dedent(source))
+            print("----- End Original Source -----\n")
     except OSError:
         code = func.__code__
         lines = linecache.getlines(code.co_filename)
