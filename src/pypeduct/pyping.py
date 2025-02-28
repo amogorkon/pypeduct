@@ -37,6 +37,7 @@ def pyped(
 
 def _transform_function(func: Callable, verbose: bool) -> Callable:
     """Performs the AST transformation using the original function's context."""
+
     ctx = {}
     if inspect.isfunction(func):
         ctx |= func.__globals__

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+
 from pyping import pyped
 
 
@@ -14,4 +16,7 @@ def test_pipeline_in_generator_expression():
     assert last_x == 2
 
 
-test_pipeline_in_generator_expression()
+for name, func in globals().copy().items():
+    if name.startswith("test_"):
+        print(inspect.getsource(func))
+        func()

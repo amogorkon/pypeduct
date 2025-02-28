@@ -14,6 +14,15 @@ def test_basic_pipe():
     assert basic_pipe() == ["5"]
 
 
+def test_tertiary_operator():
+    @pyped
+    def ternary_operator(x: int) -> int:
+        return x >> ((lambda y: y + 1) if x % 2 == 0 else (lambda y: y - 1))
+
+    assert ternary_operator(1) == 0  # (1 - 1) => 0
+    assert ternary_operator(2) == 3  # (2 + 1) => 3
+
+
 def test_complex_types():
     @pyped
     def complex_pipe() -> tuple[str, int, int]:
