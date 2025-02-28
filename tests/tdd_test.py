@@ -1,3 +1,5 @@
+"""Test-driven development tests, expected to fail."""
+
 from __future__ import annotations
 
 import ast
@@ -88,3 +90,45 @@ def test_tuple_unpacking_lambda():
         return (1, 2) >> (lambda x, y: x + y)
 
     assert multiple_assignments() == 3
+
+
+def test_nested_pipelines():
+    @pyped
+    def nested_pipeline(x: int) -> int:
+        return x >> (lambda val: val + 1 >> (lambda v: v * 2))
+
+    assert nested_pipeline(5) == 12  # 5 + 1 = 6, 6 * 2 = 12
+
+
+def test_exception_group_handling_pipe():
+    def error_func_1(x):
+        raise ValueError("Error 1")
+
+    def error_func_2(x):
+        raise TypeError("Error 2")
+
+    @pyped
+    def exception_group_pipeline(x):
+        try:
+            return x >> error_func_1 >> error_func_2
+        except ExceptionGroup as eg:
+            return ", ".join(str(e) for e in eg.exceptions)
+
+    assert exception_group_pipeline(5) == "Error 1, Error 2"
+
+
+def test_pipe_transform_error_context():
+    def error_func(x):
+        raise ValueError("Contextual Error")
+
+    @pyped
+    def context_error_pipeline(x):
+        try:
+            return x >> error_func
+        except PipeTransformError as e:
+            assert "context_error_pipeline" in e.context
+            return "Caught PipeTransformError with context"
+        except Exception:
+            return "Caught other exception"
+
+    assert context_error_pipeline(5) == "Caught PipeTransformError with context"

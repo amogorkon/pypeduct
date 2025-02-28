@@ -24,3 +24,13 @@ packages = { find = { where = ["src"] } }
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.mypy.tests.test_pyping]
+disable_error_code = ["operator"]
+
+[tool.pyright]
+disable = ["reportOperatorIssue"]

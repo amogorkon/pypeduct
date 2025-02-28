@@ -4,17 +4,39 @@ import inspect
 
 from pyping import pyped
 
+_ = pyped  # to avoid unused import warning
 
-def test_pipeline_in_generator_expression():
+# ===========================================
+
+
+def _test_nested_class_transformation():
     @pyped(verbose=True)
-    def pipeline_in_generator() -> tuple[list[int], int]:
-        gen = ((x := i) >> (lambda y: y * 2) for i in range(3))
-        return list(gen), x
+    class Outer:
+        class Inner:
+            def process(self, x: int) -> int:
+                return x >> (lambda y: y * 3)
 
-    result, last_x = pipeline_in_generator()
-    assert result == [0, 2, 4]
-    assert last_x == 2
+    instance = Outer.Inner()
+    assert instance.process(2) == 6, "Nested class method not transformed!"
 
+
+def _test_nested_pipelines():
+    @pyped(verbose=True)
+    def nested_pipeline(x: int) -> int:
+        return x >> (lambda val: val + 1 >> (lambda v: v * 2))
+
+    assert nested_pipeline(5) == 12  # 5 + 1 = 6, 6 * 2 = 12
+
+
+def test_lambda_with_kwargs_in_pipeline():
+    @pyped(verbose=True)
+    def lambda_kwargs_pipeline(x, **kwargs):
+        return x >> (lambda val, **kwargs: val + kwargs["inc"])
+
+    assert lambda_kwargs_pipeline(5, inc=1) == 6
+
+
+# ===========================================
 
 for name, func in globals().copy().items():
     if name.startswith("test_"):

@@ -1,3 +1,5 @@
+"""Core tests to quickly check the basic functionality of the library on every edit."""
+
 from __future__ import annotations
 
 import pytest
@@ -591,3 +593,58 @@ def test_pipe_with_custom_object_walrus():
         return (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
 
     assert custom_object_pipe() == 24
+
+
+def test_class_with_other_decorators():
+    def validate(cls):
+        cls.validated = True
+        return cls
+
+    @pyped
+    @validate
+    class DataProcessor:
+        def process(self, x: int) -> int:
+            return x >> (lambda y: y + 1)
+
+    # Check if @validate decorator was preserved
+    assert hasattr(DataProcessor, "validated"), "Class lost other decorators!"
+    # Check pipeline transformation
+    assert DataProcessor().process(3) == 4
+
+
+def test_class_level_variables():
+    @pyped
+    class Multiplier:
+        factor: int = 2
+
+        def apply(self, x: int) -> int:
+            return x >> (lambda y: y * self.factor)
+
+    instance = Multiplier()
+    assert instance.apply(5) == 10, "Class-level variable not resolved!"
+
+
+def test_decorator_stripping():
+    def decorator(cls):
+        cls.marked = True
+        return cls
+
+    @pyped
+    @decorator
+    class TestClass:
+        pass
+
+    assert hasattr(TestClass, "marked"), "All decorators were stripped!"
+
+
+def test_instance_variable_interaction():
+    @pyped
+    class Stateful:
+        def __init__(self, base: int):
+            self.base = base
+
+        def calculate(self) -> int:
+            return self.base >> (lambda x: x**2)
+
+    instance = Stateful(4)
+    assert instance.calculate() == 16, "Instance variable access failed!"
