@@ -13,6 +13,14 @@ from pypeduct.transformer import PipeTransformer
 T = TypeVar("T", bound=Callable[..., Any] | type[Any])
 
 
+def print_code(code, original=True):
+    print(
+        f"----- Original Code ----- \n\n{code}\n----- End Original Code -----"
+    ) if original else print(
+        f"----- Transformed Code ----- \n\n{code}\n\n----- End Transformed Code -----"
+    )
+
+
 def pyped(
     func_or_class: T | None = None, *, verbose: bool = False
 ) -> T | Callable[[T], T]:
@@ -21,47 +29,28 @@ def pyped(
     def actual_decorator(obj: T) -> T:
         transformed = None
 
-        if inspect.isclass(obj):
-            return _transform_class(obj, verbose)  # type: ignore
-
         @wraps(obj)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             nonlocal transformed
+
             if transformed is None:
-                transformed = _transform_function(obj, verbose)
+                if inspect.isclass(obj):
+                    transformed = _transform_class(obj, verbose)
+                else:
+                    transformed = _transform_function(obj, verbose)
             return transformed(*args, **kwargs)
 
         return wrapper  # type: ignore
 
-    if func_or_class is None:  # decorating with parens (keyword arguments only)
-        return actual_decorator  # type: ignore
-    else:  # decorating without parens
-        return actual_decorator(func_or_class)  # type: ignore
+    return actual_decorator(func_or_class) if func_or_class else actual_decorator
 
 
 def _transform_function(func: Callable, verbose: bool) -> Callable:
-    # sourcery skip: extract-method
     """Performs the AST transformation using the original function's context."""
-
     try:
         source = inspect.getsource(func)
     except OSError:
-        lines = linecache.getlines(func.__code__.co_filename)
-        module_ast = ast.parse("".join(lines), filename=func.__code__.co_filename)
-
-        target_node = next(
-            node
-            for node in module_ast.body
-            if (
-                isinstance(node, (ast.FunctionDef, ast.ClassDef))
-                and node.name == func.__name__
-            )
-        )
-
-        start_line = target_node.lineno - 1
-        end_line = target_node.end_lineno
-        source = "".join(lines[start_line:end_line])
-
+        source = _retrieve_source(func)
     source = dedent(source)
     if verbose:
         print_code(source, original=True)
@@ -88,6 +77,23 @@ def _transform_function(func: Callable, verbose: bool) -> Callable:
 
     exec(compile(tree, filename="<pyped>", mode="exec"), ctx)
     return ctx[func.__name__]
+
+
+def _retrieve_source(func):
+    code = func.__code__
+    lines = linecache.getlines(code.co_filename)
+
+    module_ast = ast.parse("".join(lines), code.co_filename)
+    target = next(
+        node
+        for node in ast.walk(module_ast)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == func.__name__
+        and node.lineno <= code.co_firstlineno <= node.end_lineno
+    )
+
+    result = "".join(lines[target.lineno - 1 : target.end_lineno])
+    return result.split(":", 1)[1]
 
 
 def _transform_class(cls: Type[Any], verbose: bool) -> Type[Any]:
@@ -162,11 +168,3 @@ def _transform_class(cls: Type[Any], verbose: bool) -> Type[Any]:
     )
 
     return exec_locals[cls.__name__]
-
-
-def print_code(code, original=True):
-    print(
-        f"----- Original Code ----- \n\n{code}\n----- End Original Code -----"
-    ) if original else print(
-        f"----- Transformed Code ----- \n\n{code}\n\n----- End Transformed Code -----"
-    )
