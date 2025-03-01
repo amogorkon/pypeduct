@@ -45,3 +45,17 @@ def test_method_pipe_in_property():
 
     instance = MyClass(100)
     assert instance.value == "100"
+
+
+def test_method_pipe_in_property():
+    class MyClass:
+        def __init__(self, value: int) -> None:
+            self._value = value
+
+        @property
+        @pyped
+        def value(self) -> str:
+            return self._value >> str
+
+    instance = MyClass(100)
+    assert instance.value == "100"

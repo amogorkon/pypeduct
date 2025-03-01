@@ -7,6 +7,22 @@ import pytest
 from pypeduct.pyping import pyped
 
 
+def test_no_pipes():
+    @pyped
+    def no_pipeline(x):
+        return x + 1
+
+    assert no_pipeline(5) == 6  # 5 + 1 = 6
+
+
+def test_no_pipeline_but_pyped_called():
+    @pyped()
+    def no_pipeline_but_pyped(x):
+        return x
+
+    assert no_pipeline_but_pyped(5) == 5
+
+
 def test_basic_pipe():
     @pyped
     def basic_pipe() -> list[str]:
@@ -23,6 +39,17 @@ def test_tertiary_operator():
 
     assert ternary_operator(1) == 0  # (1 - 1) => 0
     assert ternary_operator(2) == 3  # (2 + 1) => 3
+
+
+def test_binary_shift_vs_pipe():
+    @pyped
+    def binary_shift_with_pipe(x: int) -> int:
+        return x >> 2
+
+    def binary_shift_without_pipe(x: int) -> int:
+        return x >> 2
+
+    assert binary_shift_with_pipe(5) == binary_shift_without_pipe(5) == 5 >> 2 == 1
 
 
 def test_complex_types():
@@ -403,7 +430,26 @@ def test_pipe_with_walrus_tower():
     assert foo() == (60.0, 11)
 
 
-def test_pipe_with_walrus_lambda_tower():
+def test_pipe_with_walrus_tower_kwargs():
+    @pyped
+    def foo() -> tuple[float, int]:
+        def bar(x: int, /, *, baz: int) -> int:
+            return x + baz
+
+        x = (
+            5
+            >> (lambda x: x * 2)
+            >> (y := bar(baz=1))
+            >> (lambda x: x**2)
+            >> (lambda x: x - 1)
+            >> (lambda x: x / 2)
+        )
+        return x, y
+
+    assert foo() == (60.0, 11)
+
+
+def test_pipe_with_walrus_tower():
     @pyped
     def foo() -> tuple[float, int]:
         x = (

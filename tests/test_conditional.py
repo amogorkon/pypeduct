@@ -16,7 +16,7 @@ def test_pipeline_inside_conditional():
     assert pipeline_inside_conditional(False) == "Goodbye World"
 
 
-def test_pipeline_inside_conditional_Walrus():
+def test_pipeline_inside_conditional_walrus():
     @pyped
     def pipeline_in_conditional(flag: bool) -> str:
         if flag:

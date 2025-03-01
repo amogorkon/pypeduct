@@ -7,114 +7,6 @@ import pytest
 from pypeduct import pyped
 
 
-def test_pipe_with_custom_object_walrus():
-    class CustomObject:
-        def __init__(self, value):
-            self.value = value
-
-        def increment(self, _):
-            self.value += 1
-            return self
-
-        def foo(self, x: CustomObject) -> int:
-            return x.value * 2
-
-    @pyped
-    def custom_object_pipe() -> int:
-        return (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
-
-    assert custom_object_pipe() == 24
-
-
-def test_chained_walrus_assignments():
-    @pyped
-    def chained_walrus():
-        (a := 1) >> (b := lambda x: x + 1) >> (c := lambda x: x * 2)
-        return a, b, c
-
-    assert chained_walrus() == (1, 2, 4)
-
-
-def test_pipe_with_decorated_function():
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs) + 3
-
-        return wrapper
-
-    @decorator
-    @pyped
-    def decorated_func() -> int:
-        result: int = 5 >> (lambda x: x * 2)
-        return result
-
-    assert decorated_func() == 13  # (5 * 2) + 3
-
-
-def test_class_pipe_in_property():
-    @pyped
-    class MyClass:
-        def __init__(self, value: int) -> None:
-            self._value = value
-
-        @property
-        def value(self) -> str:
-            return self._value >> str
-
-    instance = MyClass(100)
-    assert instance.value == "100"
-
-
-def test_method_pipe_in_property():
-    class MyClass:
-        def __init__(self, value: int) -> None:
-            self._value = value
-
-        @property
-        @pyped
-        def value(self) -> str:
-            return self._value >> str
-
-    instance = MyClass(100)
-    assert instance.value == "100"
-
-
-def test_pipeline_inside_conditional():
-    @pyped
-    def pipeline_inside_conditional(flag: bool) -> str:
-        if flag:
-            msg = "Hello" >> (lambda x: x + " World")
-        else:
-            msg = "Goodbye" >> (lambda x: x + " World")
-        return msg
-
-    assert pipeline_inside_conditional(True) == "Hello World"
-    assert pipeline_inside_conditional(False) == "Goodbye World"
-
-
-def test_pipeline_inside_conditional_Walrus():
-    @pyped
-    def pipeline_in_conditional(flag: bool) -> str:
-        if flag:
-            (msg := "Hello") >> (lambda x: x + " World")
-        else:
-            (msg := "Goodbye") >> (lambda x: x + " World")
-        return msg
-
-    assert pipeline_in_conditional(True) == "Hello"  # Expect "Hello"
-    assert pipeline_in_conditional(False) == "Goodbye"
-
-
-def test_conditional_expression_pipeline():
-    @pyped
-    def conditional_pipeline(flag: bool) -> str:
-        msg = "Hello" if flag else "Goodbye" >> (lambda x: x + " World")
-        return msg
-
-    assert conditional_pipeline(True) == "Hello"
-    assert conditional_pipeline(False) == "Goodbye World"
-
-
 def test_assignment_in_pipeline():
     @pyped
     def assignment_pipeline() -> int:
@@ -123,48 +15,6 @@ def test_assignment_in_pipeline():
         return x + y
 
     assert assignment_pipeline() == 30  # x becomes 10, y becomes 20, 10 + 20 = 30
-
-
-def test_mixed_shift_pipeline():
-    @pyped
-    def mixed_pipeline(x):
-        return x >> (lambda v: v + 1) << (lambda v: v * 2)
-
-    assert mixed_pipeline(5) == 12  # (5 + 1) * 2 = 12
-
-
-def test_no_pipes():
-    @pyped
-    def no_pipeline(x):
-        return x + 1
-
-    assert no_pipeline(5) == 6  # 5 + 1 = 6
-
-
-def test_async_function_pipe():
-    import asyncio
-
-    @pyped
-    async def async_pipeline(x):
-        return x >> (lambda v: v + 1)
-
-    async def run_async_pipeline():
-        return await async_pipeline(5)
-
-    assert asyncio.run(run_async_pipeline()) == 6  # 5 + 1 = 6
-
-
-def test_class_decorator_pipe():
-    @pyped
-    class PipelineClass:
-        def __init__(self, value):
-            self.value = value
-
-        def process(self):
-            return self.value >> (lambda v: v + 1)
-
-    instance = PipelineClass(5)
-    assert instance.process() == 6  # 5 + 1 = 6
 
 
 def test_complex_pipeline():
@@ -186,7 +36,7 @@ def test_multi_arg_lambda_pipeline():
 def test_keyword_args_pipeline():
     @pyped
     def keyword_args_pipeline(x):
-        return x >> (lambda val, factor=2: val * factor)()
+        return x >> (lambda val, factor=2: val * factor)
 
     assert keyword_args_pipeline(5) == 10  # 5 * 2 = 10
 
@@ -197,20 +47,6 @@ def test_mixed_args_pipeline():
         return x >> (lambda a, factor=2: a * factor)(y)
 
     assert mixed_args_pipeline(5, 3) == 15  # 5 * 3 = 15 (y overrides default factor)
-
-
-def test_exception_handling_pipe():
-    def error_func(x):
-        raise ValueError("Test Exception")
-
-    @pyped
-    def exception_pipeline(x):
-        try:
-            return x >> error_func
-        except ValueError as e:
-            return str(e)
-
-    assert exception_pipeline(5) == "Test Exception"
 
 
 def test_nested_exception_handling_pipe():
@@ -230,55 +66,7 @@ def test_nested_exception_handling_pipe():
         except ValueError as e:
             return str(e)
 
-    assert nested_exception_pipeline(5) == "Outer Exception"  # Catches outer exception
-
-
-def test_pipe_in_comprehension():
-    @pyped
-    def comprehension_pipeline():
-        return [i >> (lambda x: x * 2) for i in range(5)]
-
-    assert comprehension_pipeline() == [0, 2, 4, 6, 8]  # Pipeline in list comprehension
-
-
-def test_pipe_in_generator_expression():
-    @pyped
-    def generator_pipeline():
-        return sum(i >> (lambda x: x * 2) for i in range(5))
-
-    assert generator_pipeline() == 20  # Pipeline in generator expression, summed
-
-
-def test_pipe_in_dict_comprehension():
-    @pyped
-    def dict_comprehension_pipeline():
-        return {i: i >> (lambda x: x * 2) for i in range(3)}
-
-    assert dict_comprehension_pipeline() == {
-        0: 0,
-        1: 2,
-        2: 4,
-    }  # Pipeline in dict comprehension
-
-
-def test_pipe_in_set_comprehension():
-    @pyped
-    def set_comprehension_pipeline():
-        return {i >> (lambda x: x * 2) for i in range(3)}
-
-    assert set_comprehension_pipeline() == {0, 2, 4}  # Pipeline in set comprehension
-
-
-def test_nested_comprehensions_pipe():
-    @pyped
-    def nested_comprehension_pipeline():
-        return [[j >> (lambda x: x + 1) for j in range(i)] for i in range(3)]
-
-    assert nested_comprehension_pipeline() == [
-        [],
-        [1],
-        [1, 2],
-    ]
+    assert nested_exception_pipeline(5) == "Outer Exception"
 
 
 def test_lambda_in_pipeline():
@@ -288,21 +76,6 @@ def test_lambda_in_pipeline():
 
     assert lambda_pipeline(0) == 0
     assert lambda_pipeline(1) == 2
-
-
-def test_partial_application_pipeline():
-    from functools import partial
-
-    def multiply(x, y):
-        return x * y
-
-    double = partial(multiply, y=2)
-
-    @pyped
-    def partial_pipeline(x):
-        return x >> double
-
-    assert partial_pipeline(5) == 10
 
 
 def test_method_chaining_pipe():
@@ -395,77 +168,6 @@ def test_tuple_unpacking_pipe():
         3,
         4,
     )  # Tuple unpacking in pipeline
-
-
-def test_walrus_in_lambda_in_pipeline():
-    @pyped
-    def walrus_lambda_pipeline(x):
-        return x >> (lambda val: (y := val * 2) + y)
-
-    assert walrus_lambda_pipeline(5) == 20
-
-
-def test_walrus_assignment_return_value():
-    @pyped(verbose=True)
-    def walrus_return_pipeline(x):
-        y = x >> (z := lambda val: val * 2)
-        return y, z
-
-    assert walrus_return_pipeline(5) == (10, 10)  # y = 10, returns (y, z)
-
-
-def test_walrus_assignment_in_return():
-    @pyped
-    def walrus_in_return_pipeline(x):
-        return x >> (y := lambda val: val * 2)
-
-    assert walrus_in_return_pipeline(5) == 10
-
-
-def test_walrus_in_binop_pipeline():
-    @pyped
-    def walrus_binop_pipeline(x):
-        return (x := 5) >> (lambda val: val + x)
-
-    assert walrus_binop_pipeline(10) == 10
-
-
-def test_walrus_reset_in_pipeline():
-    @pyped
-    def walrus_reset_pipeline(x):
-        x = 10
-        return (x := 5) >> (lambda val: val + x)
-
-    assert walrus_reset_pipeline(20) == 10
-
-
-def test_walrus_multiple_assignments():
-    @pyped
-    def walrus_multiple_assign_pipeline(x):
-        return (a := x) >> (lambda val: (b := val + 1, a + b))
-
-    assert walrus_multiple_assign_pipeline(5) == (6, 11)
-
-
-def test_walrus_tuple_unpacking():
-    def return_tuple(x):
-        return x, x * 2
-
-    @pyped
-    def walrus_tuple_unpack_pipeline(x):
-        return x >> (t := return_tuple) >> (lambda t: t[0] + t[1])
-
-    assert walrus_tuple_unpack_pipeline(5) == 15  # (a, b) = (5, 10), a + b = 15
-
-
-def test_complex_walrus_pipeline():
-    @pyped
-    def complex_walrus_pipeline(x):
-        return (a := x) >> (
-            lambda val: (b := val + 1) >> (lambda v: (c := v * 2, a + b + c))
-        )
-
-    assert complex_walrus_pipeline(5) == (12, 23)
 
 
 def test_class_methods_pipeline():
@@ -986,32 +688,7 @@ def test_class_with_pipes_in_multiple_methods():
             return x >> self.method1 >> self.method2
 
     instance = PipelineClassMethods()
-    assert (
-        instance.combined_method(5) == 12
-    )  # Combined method using pipes in multiple methods
-
-
-def test_lambda_capture_free_vars_pipe():
-    factor = 3  # Free variable captured by lambda
-
-    @pyped
-    def capture_free_vars_pipeline(x):
-        return x >> (lambda val: val * factor)
-
-    assert capture_free_vars_pipeline(5) == 15  # Lambda capturing free variable
-
-
-def test_lambda_closure_pipe():
-    def create_multiplier(factor):
-        return lambda val: val * factor  # Closure creating lambda
-
-    multiplier = create_multiplier(3)
-
-    @pyped
-    def closure_pipeline(x):
-        return x >> multiplier
-
-    assert closure_pipeline(5) == 15  # Closure (lambda created by function) in pipeline
+    assert instance.combined_method(5) == 12
 
 
 def test_pipe_with_f_string():
@@ -1020,9 +697,7 @@ def test_pipe_with_f_string():
         greeting = "Hello"
         return name >> (lambda x: f"{greeting}, {x}!")
 
-    assert (
-        fstring_pipeline("World") == "Hello, World!"
-    )  # f-string in lambda in pipeline
+    assert fstring_pipeline("World") == "Hello, World!"
 
 
 def test_pipe_with_bytes_string_concat():
@@ -1030,9 +705,7 @@ def test_pipe_with_bytes_string_concat():
     def bytes_concat_pipeline():
         return b"hello" >> (lambda x: x + b" world")
 
-    assert (
-        bytes_concat_pipeline() == b"hello world"
-    )  # Bytes string concatenation in lambda
+    assert bytes_concat_pipeline() == b"hello world"
 
 
 def test_pipe_with_unicode_string_concat():
@@ -1040,9 +713,7 @@ def test_pipe_with_unicode_string_concat():
     def unicode_concat_pipeline():
         return "hello" >> (lambda x: x + " world")
 
-    assert (
-        unicode_concat_pipeline() == "hello world"
-    )  # Unicode string concatenation in lambda
+    assert unicode_concat_pipeline() == "hello world"
 
 
 def test_pipe_with_list_concat():
@@ -1050,7 +721,7 @@ def test_pipe_with_list_concat():
     def list_concat_pipeline():
         return [1, 2] >> (lambda x: x + [3, 4])
 
-    assert list_concat_pipeline() == [1, 2, 3, 4]  # List concatenation in lambda
+    assert list_concat_pipeline() == [1, 2, 3, 4]
 
 
 def test_pipe_with_tuple_concat():
@@ -1058,7 +729,7 @@ def test_pipe_with_tuple_concat():
     def tuple_concat_pipeline():
         return (1, 2) >> (lambda x: x + (3, 4))
 
-    assert tuple_concat_pipeline() == (1, 2, 3, 4)  # Tuple concatenation in lambda
+    assert tuple_concat_pipeline() == (1, 2, 3, 4)
 
 
 def test_pipe_with_set_union():
@@ -1066,7 +737,7 @@ def test_pipe_with_set_union():
     def set_union_pipeline():
         return {1, 2} >> (lambda x: x | {3, 4})
 
-    assert set_union_pipeline() == {1, 2, 3, 4}  # Set union in lambda
+    assert set_union_pipeline() == {1, 2, 3, 4}
 
 
 def test_pipe_with_dict_update():
@@ -1074,7 +745,7 @@ def test_pipe_with_dict_update():
     def dict_update_pipeline():
         return {"a": 1, "b": 2} >> (lambda x: {**x, "c": 3})
 
-    assert dict_update_pipeline() == {"a": 1, "b": 2, "c": 3}  # Dict update in lambda
+    assert dict_update_pipeline() == {"a": 1, "b": 2, "c": 3}
 
 
 def test_pipe_with_complex_data_structure():
@@ -1086,7 +757,7 @@ def test_pipe_with_complex_data_structure():
     assert complex_data_pipeline() == {
         "list": [1, 2, 3],
         "tuple": (3, 4, 5),
-    }  # Complex data structure manipulation
+    }
 
 
 def test_pipe_with_empty_lambda():
@@ -1118,9 +789,7 @@ def test_pipe_with_lambda_returning_constant():
     def lambda_constant_return_pipeline(x):
         return x >> (lambda val: "constant string")
 
-    assert (
-        lambda_constant_return_pipeline(5) == "constant string"
-    )  # Lambda always returning a constant string
+    assert lambda_constant_return_pipeline(5) == "constant string"
 
 
 def test_pipe_with_lambda_returning_input():
@@ -1140,9 +809,7 @@ def test_pipe_with_lambda_side_effects():
             lambda val: side_effect_list.append(val) or val + 1
         )  # Lambda with side effect
 
-    assert (
-        lambda_side_effect_pipeline(5) == 6
-    )  # Lambda with side effect (appending to list)
+    assert lambda_side_effect_pipeline(5) == 6
     assert side_effect_list == [5]  # Side effect list is updated
 
 
@@ -1172,9 +839,7 @@ def test_pipe_with_class_instance_as_input():
     def class_instance_input_pipeline(data):
         return data >> (lambda obj: obj.increment()) >> (lambda obj: obj.get_value())
 
-    assert (
-        class_instance_input_pipeline(data_obj).value == 6
-    )  # Class instance as pipeline input
+    assert class_instance_input_pipeline(data_obj) == 6
 
 
 def test_pipe_with_complex_class_pipeline():
@@ -1207,9 +872,7 @@ def test_pipe_with_complex_class_pipeline():
     def complex_class_pipeline(processor, condition):
         return processor.process_data([3, 1, 4, 1, 5, 9, 2, 6], condition)
 
-    assert (
-        complex_class_pipeline(processor, lambda x: x > 3) == 6.0
-    )  # Complex class pipeline test
+    assert complex_class_pipeline(processor, lambda x: x > 3) == 6.0
 
 
 def test_pipe_with_recursive_function():
@@ -1220,9 +883,7 @@ def test_pipe_with_recursive_function():
         else:
             return n >> (lambda x: x + recursive_pipeline(n - 1))  # Recursive call
 
-    assert (
-        recursive_pipeline(5) == 15
-    )  # Recursive function in pipeline (sum of numbers up to n)
+    assert recursive_pipeline(5) == 15
 
 
 def test_pipe_with_generator_comprehension():
@@ -1230,9 +891,7 @@ def test_pipe_with_generator_comprehension():
     def generator_comprehension_pipeline():
         return (x * 2 for x in range(3)) >> (lambda gen: sum(gen))
 
-    assert (
-        generator_comprehension_pipeline() == 6
-    )  # Generator comprehension as initial value
+    assert generator_comprehension_pipeline() == 6
 
 
 def test_pipe_with_set_literal():
@@ -1248,7 +907,7 @@ def test_pipe_with_dict_literal():
     def dict_literal_pipeline():
         return {"a": 1, "b": 2, "c": 3} >> (lambda x: sum(x.values()))
 
-    assert dict_literal_pipeline() == 6  # Dict literal as initial value
+    assert dict_literal_pipeline() == 6
 
 
 def test_pipe_with_tuple_literal():
@@ -1256,7 +915,7 @@ def test_pipe_with_tuple_literal():
     def tuple_literal_pipeline():
         return (1, 2, 3) >> (lambda x: sum(x))
 
-    assert tuple_literal_pipeline() == 6  # Tuple literal as initial value
+    assert tuple_literal_pipeline() == 6
 
 
 def test_pipe_with_list_literal():
@@ -1264,7 +923,7 @@ def test_pipe_with_list_literal():
     def list_literal_pipeline():
         return [1, 2, 3] >> (lambda x: sum(x))
 
-    assert list_literal_pipeline() == 6  # List literal as initial value
+    assert list_literal_pipeline() == 6
 
 
 def test_pipe_with_numeric_literal():
@@ -1272,7 +931,7 @@ def test_pipe_with_numeric_literal():
     def numeric_literal_pipeline():
         return 5 >> (lambda x: x * 2)
 
-    assert numeric_literal_pipeline() == 10  # Numeric literal as initial value
+    assert numeric_literal_pipeline() == 10
 
 
 def test_pipe_with_boolean_literal():
@@ -1280,7 +939,7 @@ def test_pipe_with_boolean_literal():
     def boolean_literal_pipeline():
         return True >> (lambda x: not x)
 
-    assert boolean_literal_pipeline() is False  # Boolean literal as initial value
+    assert boolean_literal_pipeline() is False
 
 
 def test_pipe_with_none_literal():
@@ -1288,7 +947,7 @@ def test_pipe_with_none_literal():
     def none_literal_pipeline():
         return None >> (lambda x: x is None)
 
-    assert none_literal_pipeline() is True  # None literal as initial value
+    assert none_literal_pipeline() is True
 
 
 def test_pipe_with_ellipsis_literal():
@@ -1296,7 +955,7 @@ def test_pipe_with_ellipsis_literal():
     def ellipsis_literal_pipeline():
         return ... >> (lambda x: x is Ellipsis)
 
-    assert ellipsis_literal_pipeline() is True  # Ellipsis literal as initial value
+    assert ellipsis_literal_pipeline() is True
 
 
 def test_pipe_with_name_constant_true():  # Alias for True
@@ -1332,9 +991,7 @@ def test_pipe_with_recursive_lambda():
         factorial = fact(fact)
         return n >> factorial
 
-    assert (
-        recursive_lambda_pipeline(5) == 120
-    )  # Recursive lambda in pipeline (factorial)
+    assert recursive_lambda_pipeline(5) == 120
 
 
 def test_pipe_with_list_of_lambdas():
@@ -1358,25 +1015,19 @@ def test_pipe_with_dict_of_lambdas():
     assert dict_lambda_pipeline(5) == 12  # Pipeline with lambdas from dict
 
 
-def test_pipe_with_set_of_lambdas():  # Set order is not guaranteed, pipeline order will vary
+def test_pipe_with_set_of_lambdas():
     @pyped
     def set_lambda_pipeline(x):
         funcs = {
             (lambda v: v + 1),
             (lambda v: v * 2),
-        }  # Set of lambdas (order-dependent) - may fail due to set ordering
+        }
         pipeline = x
         for func in funcs:
             pipeline = pipeline >> func
         return pipeline
 
-    # This test might be order-dependent due to set iteration order. May pass or fail.
-    # To make it deterministic, avoid set of lambdas for pipelines where order matters.
-    # For demonstration, let's assume the set iteration order applies the +1 then *2 lambda.
-    # If the order is *2 then +1, the assertion should be 11 instead of 12.
-    assert (
-        set_lambda_pipeline(5) == 12
-    )  # Pipeline with set of lambdas (order-dependent)
+    assert set_lambda_pipeline(5) == 12
 
 
 def test_pipe_with_tuple_of_lambdas():
@@ -1388,7 +1039,7 @@ def test_pipe_with_tuple_of_lambdas():
             pipeline = pipeline >> func
         return pipeline
 
-    assert tuple_lambda_pipeline(5) == 12  # Pipeline with tuple of lambdas
+    assert tuple_lambda_pipeline(5) == 12
 
 
 def test_pipe_with_generator_of_lambdas():
@@ -1403,9 +1054,7 @@ def test_pipe_with_generator_of_lambdas():
             pipeline = pipeline >> func
         return pipeline
 
-    assert (
-        generator_lambda_pipeline(5) == 12
-    )  # Pipeline with generator yielding lambdas
+    assert generator_lambda_pipeline(5) == 12
 
 
 def test_pipe_with_partial_objects():
@@ -1432,9 +1081,9 @@ def test_pipe_with_method_as_callable():
 
     @pyped
     def method_callable_pipeline(instance):
-        return instance >> instance.add_one  # Passing method as callable directly
+        return instance >> instance.add_one
 
-    assert method_callable_pipeline(instance) == 6  # Pipeline with method as callable
+    assert method_callable_pipeline(instance) == 6
 
 
 def test_pipe_with_class_as_callable():
@@ -1446,9 +1095,9 @@ def test_pipe_with_class_as_callable():
 
     @pyped
     def class_callable_pipeline(x):
-        return x >> adder_instance  # Passing class instance (callable)
+        return x >> adder_instance
 
-    assert class_callable_pipeline(5) == 6  # Pipeline with class instance callable
+    assert class_callable_pipeline(5) == 6
 
 
 def test_pipe_with_builtin_function():
@@ -1462,11 +1111,9 @@ def test_pipe_with_builtin_function():
 def test_pipe_with_builtin_method():
     @pyped
     def builtin_method_pipeline():
-        return (
-            "hello" >> str.upper
-        )  # Using builtin string method upper as pipeline step
+        return "hello" >> str.upper
 
-    assert builtin_method_pipeline() == "HELLO"  # Pipeline with builtin method
+    assert builtin_method_pipeline() == "HELLO"
 
 
 def test_pipe_with_external_function():
@@ -1495,42 +1142,25 @@ def test_pipe_with_name_constant_Ellipsis():  # Alias for ...
     def ellipsis_constant_pipeline():
         return ... >> (lambda x: x is Ellipsis)
 
-    assert (
-        ellipsis_constant_pipeline() is True
-    )  # NameConstant Ellipsis as initial value
-
-
-def test_pipe_with_name_error_handling():
-    @pyped
-    def name_error_pipeline():
-        return non_existent_name >> (
-            lambda x: x
-        )  # Using non-existent name - should raise NameError
-
-    with pytest.raises(NameError):
-        name_error_pipeline()  # Expect NameError to be raised
+    assert ellipsis_constant_pipeline() is True
 
 
 def test_pipe_with_type_error_handling():
     @pyped
     def type_error_pipeline():
-        return "hello" >> (
-            lambda x: 1 / x
-        )  # Division by string - should raise TypeError
+        return "hello" >> (lambda x: 1 / x)
 
     with pytest.raises(TypeError):
-        type_error_pipeline()  # Expect TypeError to be raised
+        type_error_pipeline()
 
 
 def test_pipe_with_value_error_handling():
     @pyped
     def value_error_pipeline():
-        return -1 >> (
-            lambda x: math.sqrt(x)
-        )  # Sqrt of negative number - should raise ValueError
+        return -1 >> (lambda x: math.sqrt(x))
 
     with pytest.raises(ValueError):
-        value_error_pipeline()  # Expect ValueError to be raised
+        value_error_pipeline()
 
 
 def test_pipe_with_index_error_handling():
@@ -2826,26 +2456,12 @@ def test_pipe_with_lambda_returning_generator_expression():
     )  # Lambda returning generator expression
 
 
-def test_pipe_with_lambda_returning_conditional_expression():
-    @pyped
-    def lambda_conditional_expression_return_pipeline(x):
-        return x >> (lambda val: "Positive" if val > 0 else "Non-positive")
-
-    assert (
-        lambda_conditional_expression_return_pipeline(5) == "Positive"
-    )  # Lambda returning conditional expression
-
-
-def test_pipe_with_lambda_returning_assignment_expression():  # Walrus operator in lambda return
+def test_pipe_with_lambda_returning_assignment_expression():
     @pyped
     def lambda_assignment_expression_return_pipeline(x):
-        return x >> (
-            lambda val: (y := val * 2)
-        )  # Lambda returning assignment expression (walrus) - returns assigned value
+        return x >> (lambda val: (y := val * 2))
 
-    assert (
-        lambda_assignment_expression_return_pipeline(5) == 10
-    )  # Lambda returning assignment expression (walrus)
+    assert lambda_assignment_expression_return_pipeline(5) == 10
 
 
 def test_pipe_with_lambda_returning_call_expression():
@@ -3265,55 +2881,17 @@ def test_pipe_with_unbound_method_reference():
 
     @pyped
     def unbound_method_ref_pipeline(x):
-        return (
-            x >> Calculator.add_one >> Calculator.add_one
-        )  # Unbound method reference - needs instance
+        return x >> Calculator.add_one >> Calculator.add_one
 
-    assert unbound_method_ref_pipeline(5) == 7  # Unbound method reference pipeline
-
-
-def test_pipe_with_staticmethod_reference():
-    class MathUtils:
-        @staticmethod
-        def increment(x):
-            return x + 1
-
-    @pyped
-    def staticmethod_ref_pipeline(x):
-        return (
-            x >> MathUtils.increment >> MathUtils.increment
-        )  # Static method reference
-
-    assert staticmethod_ref_pipeline(5) == 7  # Static method reference pipeline
-
-
-def test_pipe_with_classmethod_reference():
-    class Calculator:
-        def __init__(self, value):
-            self.value = value
-
-        @classmethod
-        def create_with_increment(cls, x):
-            return cls(x + 1)
-
-    @pyped
-    def classmethod_ref_pipeline(x):
-        return (
-            x >> Calculator.create_with_increment >> (lambda calc: calc.value)
-        )  # Classmethod reference
-
-    calc_instance = classmethod_ref_pipeline(5)
-    assert calc_instance == 6  # Class method reference pipeline
+    assert unbound_method_ref_pipeline(5) == 7
 
 
 def test_pipe_with_builtin_function_reference():
     @pyped
     def builtin_func_ref_pipeline(x):
-        return x >> str >> str.upper  # Builtin function and method reference
+        return x >> str >> str.upper
 
-    assert (
-        builtin_func_ref_pipeline(5) == "5".upper()
-    )  # Builtin function and method reference pipeline
+    assert builtin_func_ref_pipeline(5) == "5".upper()
 
 
 def test_pipe_with_user_defined_function_reference():
@@ -3322,44 +2900,6 @@ def test_pipe_with_user_defined_function_reference():
 
     @pyped
     def user_func_ref_pipeline(x):
-        return x >> increment_func >> increment_func  # User-defined function reference
+        return x >> increment_func >> increment_func
 
-    assert user_func_ref_pipeline(5) == 7  # User-defined function reference pipeline
-
-
-def test_pipe_with_lambda_function_reference():
-    increment_lambda = lambda x: x + 1  # Lambda assigned to variable
-
-    @pyped
-    def lambda_func_ref_pipeline(x):
-        return x >> increment_lambda >> increment_lambda  # Lambda function reference
-
-    assert lambda_func_ref_pipeline(5) == 7  # Lambda function reference pipeline
-
-
-def test_pipe_with_partial_object_reference():
-    from functools import partial
-
-    add_partial = partial(lambda x, y: x + y, y=1)  # Partial object
-
-    @pyped
-    def partial_object_ref_pipeline(x):
-        return x >> add_partial >> add_partial  # Partial object reference
-
-    assert partial_object_ref_pipeline(5) == 7  # Partial object reference pipeline
-
-
-def test_pipe_with_closure_reference():
-    def create_incrementor_closure(inc):
-        def incrementor(x):
-            return x + inc  # Closure
-
-        return incrementor
-
-    increment_by_1 = create_incrementor_closure(1)  # Closure assigned to variable
-
-    @pyped
-    def closure_ref_pipeline(x):
-        return x >> increment_by_1 >> increment_by_1  # Closure reference pipeline
-
-    assert closure_ref_pipeline(5) == 7  # Closure reference pipeline
+    assert user_func_ref_pipeline(5) == 7

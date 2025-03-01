@@ -8,7 +8,7 @@ def test_pipe_in_comprehension():
     def comprehension_pipeline():
         return [i >> (lambda x: x * 2) for i in range(5)]
 
-    assert comprehension_pipeline() == [0, 2, 4, 6, 8]  # Pipeline in list comprehension
+    assert comprehension_pipeline() == [0, 2, 4, 6, 8]
 
 
 def test_pipe_in_generator_expression():
@@ -16,7 +16,7 @@ def test_pipe_in_generator_expression():
     def generator_pipeline():
         return sum(i >> (lambda x: x * 2) for i in range(5))
 
-    assert generator_pipeline() == 20  # Pipeline in generator expression, summed
+    assert generator_pipeline() == 20
 
 
 def test_pipe_in_dict_comprehension():
@@ -28,7 +28,7 @@ def test_pipe_in_dict_comprehension():
         0: 0,
         1: 2,
         2: 4,
-    }  # Pipeline in dict comprehension
+    }
 
 
 def test_pipe_in_set_comprehension():
@@ -36,7 +36,7 @@ def test_pipe_in_set_comprehension():
     def set_comprehension_pipeline():
         return {i >> (lambda x: x * 2) for i in range(3)}
 
-    assert set_comprehension_pipeline() == {0, 2, 4}  # Pipeline in set comprehension
+    assert set_comprehension_pipeline() == {0, 2, 4}
 
 
 def test_nested_comprehensions_pipe():
@@ -60,7 +60,7 @@ def test_generator_function_pipeline():
     def generator_func_pipeline():
         return number_generator(3) >> (lambda gen: list(gen))
 
-    assert generator_func_pipeline() == [0, 1, 2]  # Generator function as initial value
+    assert generator_func_pipeline() == [0, 1, 2]
 
 
 def test_pipe_with_generator_comprehension():
@@ -68,6 +68,4 @@ def test_pipe_with_generator_comprehension():
     def generator_comprehension_pipeline():
         return (x * 2 for x in range(3)) >> (lambda gen: sum(gen))
 
-    assert (
-        generator_comprehension_pipeline() == 6
-    )  # Generator comprehension as initial value
+    assert generator_comprehension_pipeline() == 6

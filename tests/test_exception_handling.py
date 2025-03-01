@@ -265,7 +265,7 @@ def test_pipe_with_system_exit_handling():  # SystemExit is a special case, usua
 def test_pipe_with_generator_return_handling():
     def generator_with_return():
         yield 1
-        return "Generator return value"  # Generator with explicit return value - Python 3.7+ feature
+        return "Generator return value"
         yield 2  # Unreachable
 
     @pyped
@@ -273,13 +273,11 @@ def test_pipe_with_generator_return_handling():
         gen = generator_with_return()
         return gen >> (lambda x: list(x))
 
-    assert generator_return_pipeline() == [
-        1
-    ]  # Generator return value handling test, only yields before return
+    assert generator_return_pipeline() == [1]
 
 
 def test_pipe_with_stop_iteration_handling():
-    class MyIterator:  # Custom iterator raising StopIteration
+    class MyIterator:
         def __iter__(self):
             return self
 
@@ -288,10 +286,15 @@ def test_pipe_with_stop_iteration_handling():
 
     @pyped
     def stop_iteration_pipeline():
-        return MyIterator() >> (
-            lambda x: list(x)
-        )  # Iterator immediately raising StopIteration
+        return MyIterator() >> (lambda x: list(x))
 
-    assert (
-        stop_iteration_pipeline() == []
-    )  # StopIteration handling test, empty list expected
+    assert stop_iteration_pipeline() == []
+
+
+def test_pipe_with_name_error_handling():
+    @pyped
+    def name_error_pipeline():
+        return non_existent_name >> (lambda x: x)
+
+    with pytest.raises(NameError):
+        name_error_pipeline()
