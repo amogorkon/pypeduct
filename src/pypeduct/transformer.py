@@ -18,6 +18,11 @@ from ast import (
     Return,
     RShift,
     copy_location,
+    expr,
+    keyword,
+)
+from ast import (
+    stmt as statement,
 )
 from builtins import ExceptionGroup
 from collections.abc import Sequence
@@ -84,52 +89,108 @@ class PipeTransformer(NodeTransformer):
         left = self.visit(node.left)
         right = self.visit(node.right)
 
-        if isinstance(node.right, NamedExpr) and self.generator_depth == 0:
-            return self._handle_walrus_step(node, left)
+        # Preserve bitwise shifts for constants like numbers only.
+        if isinstance(node.right, (ast.Constant)):
+            return BinOp(left=left, op=node.op, right=right)
 
-        return self._build_pipeline_call(node, left, right)
+        if not isinstance(node.right, NamedExpr) or self.generator_depth != 0:
+            return self._build_pipeline_call(node, left, right)
 
-    def _handle_walrus_step(self, node: BinOp, left: AST) -> AST:
+        func_call_node = self.visit(node.right.value)
+        if not isinstance(func_call_node, Call):
+            func_call_node = Call(
+                func=func_call_node,
+                args=[],
+                keywords=[],
+                lineno=node.right.value.lineno,
+                col_offset=node.right.value.col_offset,
+            )
+        return self._handle_walrus(node, left, func_call_node)
+
+    def _handle_walrus(self, node: BinOp, left: expr, func_call_node: expr) -> expr:
         target = node.right.target
-        func = self.visit(node.right.value)
 
-        call = Call(
-            func=func,
-            args=[left],
-            keywords=[],
+        # Avoid visiting func_call_node again
+        if isinstance(func_call_node, ast.Call):
+            # Construct a new call, adding 'left' as the first positional argument
+            call = ast.Call(
+                func=func_call_node.func,
+                args=[left] + func_call_node.args,
+                keywords=func_call_node.keywords,
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            )
+        elif isinstance(func_call_node, ast.Name):
+            # If func_call_node is a name, we need to call it with 'left' as the argument
+            call = ast.Call(
+                func=func_call_node,
+                args=[left],
+                keywords=[],
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            )
+        else:
+            raise PipeTransformError(
+                "Expected Call or Name node in walrus operator",
+                [TypeError(f"Got {type(func_call_node).__name__} instead")],
+                context={"node": ast.dump(node)},
+            )
+
+        # Assign the result to the target of the walrus operator
+        assignment = ast.Assign(
+            targets=[target],
+            value=call,
             lineno=node.lineno,
             col_offset=node.col_offset,
         )
-        assignment = Assign(
-            targets=[target], value=call, lineno=node.lineno, col_offset=node.col_offset
+        self.current_block_assignments.append(assignment)
+        return call
+
+    def _handle_assignment_node(self, target, call, node):
+        assignment = ast.Assign(
+            targets=[target],
+            value=call,
+            lineno=node.lineno,
+            col_offset=node.col_offset,
         )
         self.current_block_assignments.append(assignment)
-        return Name(id=target.id, ctx=Load())
+        return call
 
-    def _build_pipeline_call(self, node: BinOp, left: AST, right: AST) -> AST:
+    def _build_pipeline_call(
+        self,
+        node: BinOp,
+        left: expr,
+        right: expr,
+        original_kwargs_name: str | None = None,
+    ) -> expr:
         """Build the pipeline function call structure"""
+        keywords_to_add = []
+        if isinstance(right, Lambda) and right.args.kwarg and original_kwargs_name:
+            keywords_to_add.append(
+                keyword(arg=None, value=Name(id=original_kwargs_name, ctx=Load()))
+            )
+
         if isinstance(right, Call):
             return Call(
                 func=right.func,
                 args=[left] + right.args,
-                keywords=right.keywords,
+                keywords=right.keywords + keywords_to_add,
                 lineno=node.lineno,
                 col_offset=node.col_offset,
             )
+
         return Call(
             func=right,
             args=[left],
-            keywords=[],
+            keywords=keywords_to_add,
             lineno=node.lineno,
             col_offset=node.col_offset,
         )
 
-    def visit_NamedExpr(self, node: NamedExpr) -> AST:
-        if self.generator_depth > 0 or self.in_lambda:
-            processed_value = self.visit(node.value)
-            return copy_location(
-                NamedExpr(target=node.target, value=processed_value), node
-            )
+    def visit_NamedExpr(self, node: NamedExpr) -> expr:
+        if self.in_lambda or self.generator_depth > 0:
+            # Preserve walrus operator inside lambdas/generators
+            return self.generic_visit(node)
 
         processed_value = self.visit(node.value)
         assignment = Assign(
@@ -170,16 +231,6 @@ class PipeTransformer(NodeTransformer):
 
         return node
 
-    def _lambda_to_named_function(self, name: str, lambda_node: Lambda) -> FunctionDef:
-        """Convert lambda with assignments to named function"""
-        return FunctionDef(
-            name=name,
-            args=lambda_node.args,
-            body=[*self.current_block_assignments, Return(value=lambda_node.body)],
-            decorator_list=[],
-            returns=None,
-        )
-
     def _generate_lambda_name(self) -> str:
         self.lambda_counter += 1
         return f"_lambda_{self.lambda_counter}"
@@ -195,13 +246,20 @@ class PipeTransformer(NodeTransformer):
 
         return node
 
-    def visit_Lambda(self, node: Lambda) -> AST:
+    def visit_Lambda(self, node: Lambda) -> expr:
         original_assignments = self.current_block_assignments
         original_in_lambda = self.in_lambda
-        self.current_block_assignments = []
         self.in_lambda = True
+        self.current_block_assignments = []
 
         processed_body = self.visit(node.body)
+
+        if isinstance(processed_body, BinOp) and isinstance(
+            processed_body.op, (LShift, RShift)
+        ):
+            processed_body = self.visit_BinOp(processed_body)
+
+        self.in_lambda = original_in_lambda
 
         if self.current_block_assignments:
             new_body = [*self.current_block_assignments, Return(value=processed_body)]
@@ -225,10 +283,27 @@ class PipeTransformer(NodeTransformer):
         self.in_lambda = original_in_lambda
         return node
 
-    def visit_Return(self, node: Return) -> list[AST]:
+    def visit_Return(self, node: Return) -> list[statement]:
         original_assignments = self.current_block_assignments
         self.current_block_assignments = []
         node.value = self.visit(node.value)
         assignments = self.current_block_assignments
         self.current_block_assignments = original_assignments
         return assignments + [node]
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.ClassDef:
+        new_body = []
+        for statement in node.body:
+            self.current_block_assignments = []
+
+            processed_stmt = self.visit(statement)
+
+            new_body.extend(self.current_block_assignments)
+
+            if isinstance(processed_stmt, list):
+                new_body.extend(processed_stmt)
+            else:
+                new_body.append(processed_stmt)
+
+        node.body = new_body
+        return node
