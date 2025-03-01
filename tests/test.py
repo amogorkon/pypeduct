@@ -1,24 +1,22 @@
-from __future__ import annotations
+"""WIP tests for pypeduct."""
 
 import inspect
 
-from pypeduct import pyped
-
-_ = pyped  # to avoid unused import warning
+from pypeduct import pyped as pyped
 
 # ===========================================
 
 
-def test_pipe_with_walrus_tower():
-    @pyped(verbose=True)
+def test_pipe_with_walrus_tower_kwargs():
+    @pyped
     def foo() -> tuple[float, int]:
-        def bar(x: int) -> int:
-            return x + 1
+        def bar(x: int, /, *, baz: int) -> int:
+            return x + baz
 
         x = (
             5
             >> (lambda x: x * 2)
-            >> (y := bar)
+            >> (y := bar(baz=1))
             >> (lambda x: x**2)
             >> (lambda x: x - 1)
             >> (lambda x: x / 2)
