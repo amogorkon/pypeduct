@@ -68,18 +68,13 @@ class PipeTransformer(NodeTransformer):
         self.current_block_assignments: list[Assign] = []
         self.generator_depth = 0
         self.in_lambda = False
+        self.function_params = {}
 
     def visit_FunctionDef(self, node: FunctionDef) -> FunctionDef:
-        new_body: list[AST] = []
-        for stmt in node.body:
-            self.current_block_assignments = []
-            processed = self.visit(stmt)
-            new_body.extend(self.current_block_assignments)
-            if isinstance(processed, list):
-                new_body.extend(processed)
-            else:
-                new_body.append(processed)
-        node.body = new_body
+        # Record the number of positional parameters for the function
+        num_pos_args = len(node.args.posonlyargs) + len(node.args.args)
+        self.function_params[node.name] = num_pos_args
+        self.generic_visit(node)
         return node
 
     def visit_BinOp(self, node: BinOp) -> AST:
@@ -87,22 +82,17 @@ class PipeTransformer(NodeTransformer):
             return self.generic_visit(node)
 
         left = self.visit(node.left)
-        original_right = node.right  # Keep the original right node before visiting
+        original_right = node.right
 
-        # Check if the right is a NamedExpr (walrus operator) and not in a generator
+        # Handle walrus operator in pipeline
         if isinstance(original_right, NamedExpr) and self.generator_depth == 0:
-            # Process the value of the NamedExpr (right.value) without visiting the NamedExpr itself
             processed_value = self.visit(original_right.value)
             target = original_right.target
-            # Handle the walrus operator within the pipeline context
             return self._handle_walrus(node, left, processed_value, target)
         else:
-            # Visit the right node normally
             right = self.visit(original_right)
-            # Preserve bitwise shifts for constants like numbers only.
             if isinstance(original_right, ast.Constant):
                 return BinOp(left=left, op=node.op, right=right)
-            # Proceed to build the pipeline call
             return self._build_pipeline_call(node, left, right)
 
     def _handle_walrus(
@@ -155,29 +145,46 @@ class PipeTransformer(NodeTransformer):
         right: expr,
         original_kwargs_name: str | None = None,
     ) -> expr:
-        """Build the pipeline function call structure"""
+        """Build the pipeline call, unpacking tuples for multi-param functions."""
         keywords_to_add = []
         if isinstance(right, Lambda) and right.args.kwarg and original_kwargs_name:
             keywords_to_add.append(
                 keyword(arg=None, value=Name(id=original_kwargs_name, ctx=Load()))
             )
 
+        # Determine number of positional arguments expected by the target function
+        num_pos_args = 0
+        if isinstance(right, Lambda):
+            num_pos_args = getattr(
+                right,
+                "_pyped_pos_args",
+                len(right.args.posonlyargs) + len(right.args.args),
+            )
+        elif isinstance(right, Name):
+            num_pos_args = self.function_params.get(right.id, 0)
+
+        # Prepare arguments: unpack if function expects multiple positional args
+        if num_pos_args > 1:
+            args = [ast.Starred(value=left, ctx=ast.Load())]
+        else:
+            args = [left]
+
         if isinstance(right, Call):
             return Call(
                 func=right.func,
-                args=[left] + right.args,
+                args=args + right.args,
                 keywords=right.keywords + keywords_to_add,
                 lineno=node.lineno,
                 col_offset=node.col_offset,
             )
-
-        return Call(
-            func=right,
-            args=[left],
-            keywords=keywords_to_add,
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-        )
+        else:
+            return Call(
+                func=right,
+                args=args,
+                keywords=keywords_to_add,
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+            )
 
     def visit_NamedExpr(self, node: NamedExpr) -> expr:
         if self.in_lambda or self.generator_depth > 0:
@@ -239,40 +246,11 @@ class PipeTransformer(NodeTransformer):
         return node
 
     def visit_Lambda(self, node: Lambda) -> expr:
-        original_assignments = self.current_block_assignments
-        original_in_lambda = self.in_lambda
-        self.in_lambda = True
-        self.current_block_assignments = []
-
-        processed_body = self.visit(node.body)
-
-        if isinstance(processed_body, BinOp) and isinstance(
-            processed_body.op, (LShift, RShift)
-        ):
-            processed_body = self.visit_BinOp(processed_body)
-
-        self.in_lambda = original_in_lambda
-
-        if self.current_block_assignments:
-            new_body = [*self.current_block_assignments, Return(value=processed_body)]
-
-            func_name = self._generate_lambda_name()
-            func_def = FunctionDef(
-                name=func_name,
-                args=node.args,
-                body=new_body,
-                decorator_list=[],
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-
-            self.current_block_assignments = original_assignments
-            self.current_block_assignments.append(func_def)
-
-            return copy_location(Name(id=func_name, ctx=Load()), node)
-
-        self.current_block_assignments = original_assignments
-        self.in_lambda = original_in_lambda
+        # Record the number of positional parameters for the lambda
+        num_pos_args = len(node.args.posonlyargs) + len(node.args.args)
+        # Lambdas are anonymous, so track via a custom attribute
+        setattr(node, "_pyped_pos_args", num_pos_args)
+        self.generic_visit(node)
         return node
 
     def visit_Return(self, node: Return) -> list[statement]:
