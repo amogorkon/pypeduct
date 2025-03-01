@@ -87,57 +87,49 @@ class PipeTransformer(NodeTransformer):
             return self.generic_visit(node)
 
         left = self.visit(node.left)
-        right = self.visit(node.right)
+        original_right = node.right  # Keep the original right node before visiting
 
-        # Preserve bitwise shifts for constants like numbers only.
-        if isinstance(node.right, (ast.Constant)):
-            return BinOp(left=left, op=node.op, right=right)
-
-        if not isinstance(node.right, NamedExpr) or self.generator_depth != 0:
+        # Check if the right is a NamedExpr (walrus operator) and not in a generator
+        if isinstance(original_right, NamedExpr) and self.generator_depth == 0:
+            # Process the value of the NamedExpr (right.value) without visiting the NamedExpr itself
+            processed_value = self.visit(original_right.value)
+            target = original_right.target
+            # Handle the walrus operator within the pipeline context
+            return self._handle_walrus(node, left, processed_value, target)
+        else:
+            # Visit the right node normally
+            right = self.visit(original_right)
+            # Preserve bitwise shifts for constants like numbers only.
+            if isinstance(original_right, ast.Constant):
+                return BinOp(left=left, op=node.op, right=right)
+            # Proceed to build the pipeline call
             return self._build_pipeline_call(node, left, right)
 
-        func_call_node = self.visit(node.right.value)
-        if not isinstance(func_call_node, Call):
-            func_call_node = Call(
-                func=func_call_node,
-                args=[],
-                keywords=[],
-                lineno=node.right.value.lineno,
-                col_offset=node.right.value.col_offset,
-            )
-        return self._handle_walrus(node, left, func_call_node)
-
-    def _handle_walrus(self, node: BinOp, left: expr, func_call_node: expr) -> expr:
-        target = node.right.target
-
-        # Avoid visiting func_call_node again
-        if isinstance(func_call_node, ast.Call):
-            # Construct a new call, adding 'left' as the first positional argument
-            call = ast.Call(
+    def _handle_walrus(
+        self, node: BinOp, left: expr, func_call_node: expr, target: Name
+    ) -> expr:
+        """Handles the walrus operator within a pipeline step."""
+        # Construct the function call with left as the first argument
+        if isinstance(func_call_node, Call):
+            call = Call(
                 func=func_call_node.func,
                 args=[left] + func_call_node.args,
                 keywords=func_call_node.keywords,
                 lineno=node.lineno,
                 col_offset=node.col_offset,
             )
-        elif isinstance(func_call_node, ast.Name):
-            # If func_call_node is a name, we need to call it with 'left' as the argument
-            call = ast.Call(
+        else:
+            # If it's not a Call, assume it's a function reference and create a call
+            call = Call(
                 func=func_call_node,
                 args=[left],
                 keywords=[],
                 lineno=node.lineno,
                 col_offset=node.col_offset,
             )
-        else:
-            raise PipeTransformError(
-                "Expected Call or Name node in walrus operator",
-                [TypeError(f"Got {type(func_call_node).__name__} instead")],
-                context={"node": ast.dump(node)},
-            )
 
-        # Assign the result to the target of the walrus operator
-        assignment = ast.Assign(
+        # Create the assignment to the target of the walrus operator
+        assignment = Assign(
             targets=[target],
             value=call,
             lineno=node.lineno,
@@ -293,10 +285,10 @@ class PipeTransformer(NodeTransformer):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> ast.ClassDef:
         new_body = []
-        for statement in node.body:
+        for stmt in node.body:
             self.current_block_assignments = []
 
-            processed_stmt = self.visit(statement)
+            processed_stmt = self.visit(stmt)
 
             new_body.extend(self.current_block_assignments)
 
