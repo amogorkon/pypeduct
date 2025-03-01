@@ -65,20 +65,18 @@ def test_awaitable_in_pipeline():
     async def run_awaitable_pipeline():
         return await awaitable_pipeline(5)
 
-    assert asyncio.run(run_awaitable_pipeline()) == 6  # Awaitable function in pipeline
+    assert asyncio.run(run_awaitable_pipeline()) == 6
 
 
 def test_async_lambda_in_pipeline():
     @pyped
     async def async_lambda_pipeline(x):
-        return x >> (
-            lambda val: asyncio.sleep(0.01) or val + 1
-        )  # Async lambda (returning awaitable)
+        return x >> (lambda val: asyncio.sleep(0.01) or val + 1)
 
     async def run_async_lambda_pipeline():
         return await async_lambda_pipeline(5)
 
-    assert asyncio.run(run_async_lambda_pipeline()) == 6  # Async lambda in pipeline
+    assert asyncio.run(run_async_lambda_pipeline()) == 6
 
 
 def test_async_comprehension_pipeline():
@@ -91,9 +89,7 @@ def test_async_comprehension_pipeline():
     async def run_async_comprehension_pipeline():
         return await async_comprehension_pipeline()
 
-    assert (
-        asyncio.run(run_async_comprehension_pipeline()) == 6
-    )  # Async comprehension as initial value
+    assert asyncio.run(run_async_comprehension_pipeline()) == 6
 
 
 def test_async_for_loop_pipeline():
@@ -116,7 +112,7 @@ def test_async_for_loop_pipeline():
         0,
         1,
         2,
-    ]  # Async for loop in pipeline
+    ]
 
 
 def test_async_with_statement_pipeline():
@@ -140,6 +136,4 @@ def test_async_with_statement_pipeline():
     async def run_async_with_statement_pipeline():
         return await async_with_statement_pipeline(5)
 
-    assert (
-        asyncio.run(run_async_with_statement_pipeline()) == 6
-    )  # Async with statement in pipeline
+    assert asyncio.run(run_async_with_statement_pipeline()) == 6

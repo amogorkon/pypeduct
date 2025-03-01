@@ -61,7 +61,7 @@ def test_pipe_with_custom_object_walrus():
 
 
 def test_pipe_with_walrus_tower_kwargs():
-    @pyped(verbose=True)
+    @pyped
     def foo() -> tuple[float, int]:
         def bar(x: int, /, *, baz: int) -> int:
             return x + baz
@@ -104,7 +104,7 @@ def test_walrus_in_lambda_in_pipeline():
 
 
 def test_walrus_assignment_return_value():
-    @pyped(verbose=True)
+    @pyped
     def walrus_return_pipeline(x):
         y = x >> (z := lambda val: val * 2)
         return y, z
