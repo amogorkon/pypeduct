@@ -2,7 +2,7 @@ from pypeduct import pyped
 
 
 def test_nested_class_transformation():
-    @pyped
+    @pyped(verbose=True)
     class Outer:
         class Inner:
             def process(self, x: int) -> int:

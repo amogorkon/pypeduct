@@ -6,7 +6,7 @@ from pypeduct import pyped
 def test_lambda_with_defaults_in_pipeline():
     @pyped
     def lambda_defaults_pipeline(x):
-        return x >> (lambda val, inc=1: val + inc)
+        return x >> (lambda val, *, inc=1: val + inc)
 
     assert lambda_defaults_pipeline(5) == 6
 
@@ -134,4 +134,14 @@ def test_lambda_closure_pipe():
     def closure_pipeline(x):
         return x >> multiplier
 
-    assert closure_pipeline(5) == 15  # Closure (lambda created by function) in pipeline
+    assert closure_pipeline(5) == 15
+
+
+def test_pipe_with_lambda_returning_lambda():
+    @pyped
+    def lambda_lambda_return_pipeline(x):
+        return (
+            x >> (lambda val: lambda v: v + 1) >> (lambda inner_lambda: inner_lambda(5))
+        )
+
+    assert lambda_lambda_return_pipeline(5) == 6

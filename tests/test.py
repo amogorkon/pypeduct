@@ -8,7 +8,7 @@ from pypeduct import pyped as pyped
 
 
 def test_pipe_with_walrus_tower_kwargs():
-    @pyped
+    @pyped(verbose=True)
     def foo() -> tuple[float, int]:
         def bar(x: int, /, *, baz: int) -> int:
             return x + baz

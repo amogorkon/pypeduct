@@ -32,6 +32,17 @@ def test_basic_pipe():
     assert basic_pipe() == ["5"]
 
 
+def test_pipe_with_user_defined_function_reference():
+    def increment_func(x):
+        return x + 1
+
+    @pyped
+    def user_func_ref_pipeline(x):
+        return x >> increment_func >> increment_func
+
+    assert user_func_ref_pipeline(5) == 7
+
+
 def test_tertiary_operator():
     @pyped
     def ternary_operator(x: int) -> int:

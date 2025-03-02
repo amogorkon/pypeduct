@@ -137,3 +137,91 @@ def test_async_with_statement_pipeline():
         return await async_with_statement_pipeline(5)
 
     assert asyncio.run(run_async_with_statement_pipeline()) == 6
+
+
+def test_pipe_with_lambda_returning_awaitable():
+    import asyncio
+
+    async def dummy_awaitable(x):
+        await asyncio.sleep(0.01)
+        return x
+
+    @pyped
+    async def lambda_awaitable_return_pipeline(x):
+        return x >> (lambda val: dummy_awaitable(val))  # Lambda returning awaitable
+
+    async def run_lambda_awaitable_return_pipeline():
+        return await lambda_awaitable_return_pipeline(5)
+
+    assert asyncio.run(run_lambda_awaitable_return_pipeline()) == 5
+
+
+def test_async_with_statement_pipeline():
+    import asyncio
+
+    class AsyncContextManager:
+        async def __aenter__(self):
+            print("Entering async context")
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            print("Exiting async context")
+
+        async def process(self, x):
+            await asyncio.sleep(0.01)
+            return x + 1
+
+    @pyped
+    async def async_with_statement_pipeline(x):
+        async with AsyncContextManager() as acm:
+            return x >> acm.process
+
+    async def run_async_with_statement_pipeline():
+        return await async_with_statement_pipeline(5)
+
+    assert asyncio.run(run_async_with_statement_pipeline()) == 6
+
+
+def test_async_lambda_in_pipeline():
+    import asyncio
+
+    @pyped
+    async def async_lambda_pipeline(x):
+        return x >> (lambda val: asyncio.sleep(0.01) or val + 1)
+
+    async def run_async_lambda_pipeline():
+        return await async_lambda_pipeline(5)
+
+    assert asyncio.run(run_async_lambda_pipeline()) == 6
+
+
+def test_awaitable_in_pipeline():
+    import asyncio
+
+    async def awaitable_func(x):
+        await asyncio.sleep(0.01)
+        return x + 1
+
+    @pyped
+    async def awaitable_pipeline(x):
+        return x >> awaitable_func
+
+    async def run_awaitable_pipeline():
+        return await awaitable_pipeline(5)
+
+    assert asyncio.run(run_awaitable_pipeline()) == 6
+
+
+def test_async_comprehension_pipeline():
+    import asyncio
+
+    @pyped
+    async def async_comprehension_pipeline():
+        return [await asyncio.sleep(0.01) or i * 2 async for i in range(3)] >> (
+            lambda x: sum(x)
+        )
+
+    async def run_async_comprehension_pipeline():
+        return await async_comprehension_pipeline()
+
+    assert asyncio.run(run_async_comprehension_pipeline()) == 6
