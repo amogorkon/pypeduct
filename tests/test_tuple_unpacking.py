@@ -12,7 +12,7 @@ def test_tuple_unpacking_lambda():
 
 
 def test_tuple_unpacking_function():
-    @pyped(verbose=True)
+    @pyped
     def multiple_assignments() -> tuple[int, int]:
         def add(x: int, y: int) -> int:
             return x + y
@@ -22,6 +22,30 @@ def test_tuple_unpacking_function():
     assert multiple_assignments() == 3
 
 
+def test_pipe_with_tuple_concat():
+    @pyped
+    def tuple_concat_pipeline():
+        return (1, 2) >> (lambda x: x + (3, 4))
+
+    assert tuple_concat_pipeline() == (1, 2, 3, 4)
+
+
+def test_pipe_with_tuple_literal():
+    @pyped
+    def tuple_literal_pipeline():
+        return (1, 2, 3) >> (lambda x: sum(x))
+
+    assert tuple_literal_pipeline() == 6
+
+
+def test_keyword_args_pipeline():
+    @pyped
+    def keyword_args_pipeline(x):
+        return x >> (lambda val, factor=2: val * factor)
+
+    assert keyword_args_pipeline(5) == 10  # 5 * 2 = 10
+
+
 def test_tuple_unpacking_pipe():
     def add(x: int, y: int) -> int:
         return x + y
@@ -29,7 +53,7 @@ def test_tuple_unpacking_pipe():
     def multiply_and_add(x: int, y: int) -> int:
         return x * y, x + y
 
-    @pyped(verbose=True)
+    @pyped
     def multiple_assignments() -> tuple[int, int]:
         return (1, 2) >> multiply_and_add >> add
 
@@ -55,7 +79,7 @@ def test_tuple_unpacking_failure():
 
 
 def test_tuple_with_default_args():
-    @pyped(verbose=True)
+    @pyped
     def test_default_args() -> int:
         def add(x: int, y: int = 0) -> int:
             return x + y
@@ -66,7 +90,7 @@ def test_tuple_with_default_args():
 
 
 def test_variadic_function():
-    @pyped(verbose=True)
+    @pyped
     def test_variadic() -> int:
         def sum_all(*args: int) -> int:
             return sum(args)

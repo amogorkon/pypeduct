@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
-from pypeduct.pyping import pyped
+from pypeduct import pyped
 
 
 def test_no_pipes():
@@ -23,10 +25,48 @@ def test_no_pipeline_but_pyped_called():
     assert no_pipeline_but_pyped(5) == 5
 
 
+def test_external_function():
+    @pyped
+    def compute_square_root():
+        return 16 >> math.sqrt  # math.sqrt defined outside our module
+
+    assert compute_square_root() == 4.0
+
+
+def test_builtin_function():
+    @pyped
+    def compute_length():
+        return [1, 2, 3] >> len  # len is a built-in function
+
+    assert compute_length()
+
+
+def test_function_with_multiple_default_args():
+    @pyped
+    def compute():
+        def add_numbers(x, y=10, z=5):
+            return x + y + z
+
+        return 5 >> add_numbers
+
+    assert compute() == 20
+
+
+def test_function_with_keyword_only_args():
+    @pyped
+    def process_data():
+        def transform(data, *, scale=1):
+            return [x * scale for x in data]
+
+        return [1, 2, 3] >> transform
+
+    assert process_data() == [1, 2, 3]
+
+
 def test_basic_pipe():
     @pyped
     def basic_pipe() -> list[str]:
-        result: list[str] = 5 >> str << list
+        result: list[str] = 5 >> str >> list
         return result
 
     assert basic_pipe() == ["5"]
@@ -194,9 +234,7 @@ def test_pipe_with_kwargs_in_function():
         def greet(name: str, greeting: str = "Hello") -> str:
             return f"{greeting}, {name}!"
 
-        left_result: str = "Alyz" << greet(greeting="Hi")
         right_result: str = "Alyz" >> greet(greeting="Hi")
-        assert left_result == right_result
         return right_result
 
     assert kwargs_function() == "Hi, Alyz!"
@@ -205,7 +243,7 @@ def test_pipe_with_kwargs_in_function():
 def test_pipe_with_multiple_pyped_in_one_expression():
     @pyped
     def multiple_pyped() -> int:
-        result: int = 5 >> (lambda x: x + 1) >> (lambda x: x * 2) << (lambda x: x - 3)
+        result: int = 5 >> (lambda x: x + 1) >> (lambda x: x * 2) >> (lambda x: x - 3)
         return result
 
     assert multiple_pyped() == 9

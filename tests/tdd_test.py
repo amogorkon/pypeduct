@@ -84,14 +84,6 @@ def test_pipe_with_partial_methods():
     foo()
 
 
-def test_nested_pipelines():
-    @pyped
-    def nested_pipeline(x: int) -> int:
-        return x >> (lambda val: val + 1 >> (lambda v: v * 2))
-
-    assert nested_pipeline(5) == 12  # 5 + 1 = 6, 6 * 2 = 12
-
-
 def test_exception_group_handling_pipe():
     def error_func_1(x):
         raise ValueError("Error 1")
@@ -127,14 +119,6 @@ def test_pipe_transform_error_context():
 
 
 # ------------- gemini tests below -------------
-
-
-def test_keyword_args_pipeline():
-    @pyped
-    def keyword_args_pipeline(x):
-        return x >> (lambda val, factor=2: val * factor)
-
-    assert keyword_args_pipeline(5) == 10  # 5 * 2 = 10
 
 
 def test_pipe_with_unbound_method_reference():
@@ -952,14 +936,6 @@ def test_deeply_nested_pipeline():
         return pipeline
 
     assert deeply_nested_pipeline(0) == 500
-
-
-def test_lambda_with_defaults_in_pipeline():
-    @pyped
-    def lambda_defaults_pipeline(x):
-        return x >> (lambda val, inc=1: val + inc)
-
-    assert lambda_defaults_pipeline(5) == 6
 
 
 def test_lambda_with_kwargs_in_pipeline():

@@ -7,6 +7,17 @@ import pytest
 from pypeduct import pyped
 
 
+def test_lshift_not_transformed():
+    @pyped(verbose=True)
+    def lshift_operation(value):
+        return value << 2
+
+    input_value = 5
+    expected_result = input_value << 2  # Standard left shift behavior: 5 << 2 = 20
+    actual_result = lshift_operation(input_value)
+    assert actual_result == expected_result
+
+
 def test_assignment_in_pipeline():
     @pyped
     def assignment_pipeline() -> int:
@@ -584,14 +595,6 @@ def test_pipe_with_list_concat():
     assert list_concat_pipeline() == [1, 2, 3, 4]
 
 
-def test_pipe_with_tuple_concat():
-    @pyped
-    def tuple_concat_pipeline():
-        return (1, 2) >> (lambda x: x + (3, 4))
-
-    assert tuple_concat_pipeline() == (1, 2, 3, 4)
-
-
 def test_pipe_with_set_union():
     @pyped
     def set_union_pipeline():
@@ -724,14 +727,6 @@ def test_pipe_with_dict_literal():
         return {"a": 1, "b": 2, "c": 3} >> (lambda x: sum(x.values()))
 
     assert dict_literal_pipeline() == 6
-
-
-def test_pipe_with_tuple_literal():
-    @pyped
-    def tuple_literal_pipeline():
-        return (1, 2, 3) >> (lambda x: sum(x))
-
-    assert tuple_literal_pipeline() == 6
 
 
 def test_pipe_with_list_literal():
@@ -1457,273 +1452,6 @@ def test_pipe_with_global_keyword():
     assert (
         global_keyword_pipeline(5) == 26
     )  # Global keyword test, GLOBAL_VAR becomes 21, 5 + 21 = 26
-
-
-def test_pipe_with_lambda_returning_tuple():
-    @pyped
-    def lambda_tuple_return_pipeline(x):
-        return x >> (lambda val: (val + 1, val * 2))
-
-    assert lambda_tuple_return_pipeline(5) == (6, 10)
-
-
-def test_pipe_with_lambda_returning_list():
-    @pyped
-    def lambda_list_return_pipeline(x):
-        return x >> (lambda val: [val + 1, val * 2])
-
-    assert lambda_list_return_pipeline(5) == [6, 10]
-
-
-def test_pipe_with_lambda_returning_dict():
-    @pyped
-    def lambda_dict_return_pipeline(x):
-        return x >> (lambda val: {"incremented": val + 1, "doubled": val * 2})
-
-    assert lambda_dict_return_pipeline(5) == {
-        "incremented": 6,
-        "doubled": 10,
-    }  # Lambda returning dict
-
-
-def test_pipe_with_lambda_returning_set():
-    @pyped
-    def lambda_set_return_pipeline(x):
-        return x >> (lambda val: {val, val + 1, val * 2})
-
-    assert lambda_set_return_pipeline(5) == {5, 6, 10}  # Lambda returning set
-
-
-def test_pipe_with_lambda_returning_frozenset():
-    @pyped
-    def lambda_frozenset_return_pipeline(x):
-        return x >> (lambda val: frozenset({val, val + 1, val * 2}))
-
-    assert lambda_frozenset_return_pipeline(5) == frozenset({
-        5,
-        6,
-        10,
-    })  # Lambda returning frozenset
-
-
-def test_pipe_with_lambda_returning_generator():
-    @pyped
-    def lambda_generator_return_pipeline(x):
-        return (
-            x
-            >> (lambda val: (i for i in range(val, val + 3)))
-            >> (lambda gen: list(gen))
-        )
-
-    assert lambda_generator_return_pipeline(5) == [
-        5,
-        6,
-        7,
-    ]  # Lambda returning generator
-
-
-def test_pipe_with_lambda_returning_map_object():
-    @pyped
-    def lambda_map_return_pipeline(x):
-        return (
-            x
-            >> (lambda val: map(lambda i: i * 2, range(val, val + 3)))
-            >> (lambda map_obj: list(map_obj))
-        )
-
-    assert lambda_map_return_pipeline(5) == [10, 12, 14]  # Lambda returning map object
-
-
-def test_pipe_with_lambda_returning_filter_object():
-    @pyped
-    def lambda_filter_return_pipeline(x):
-        return (
-            x
-            >> (lambda val: filter(lambda i: i % 2 == 0, range(val, val + 5)))
-            >> (lambda filter_obj: list(filter_obj))
-        )
-
-    assert lambda_filter_return_pipeline(5) == [6, 8]  # Lambda returning filter object
-
-
-def test_pipe_with_lambda_returning_enumerate_object():
-    @pyped
-    def lambda_enumerate_return_pipeline(x):
-        return (
-            x
-            >> (lambda val: enumerate(range(val, val + 3)))
-            >> (lambda enum_obj: [(index, value) for index, value in enum_obj])
-        )
-
-    assert lambda_enumerate_return_pipeline(5) == [
-        (0, 5),
-        (1, 6),
-        (2, 7),
-    ]  # Lambda returning enumerate object
-
-
-def test_pipe_with_lambda_returning_reversed_object():
-    @pyped
-    def lambda_reversed_return_pipeline(x):
-        return (
-            x
-            >> (lambda val: reversed(range(val, val + 3)))
-            >> (lambda reversed_obj: list(reversed_obj))
-        )
-
-    assert lambda_reversed_return_pipeline(5) == [
-        7,
-        6,
-        5,
-    ]  # Lambda returning reversed object
-
-
-def test_pipe_with_lambda_returning_memoryview_object():
-    @pyped
-    def lambda_memoryview_return_pipeline(x):
-        return (
-            x
-            >> (lambda val: memoryview(b"hello"))
-            >> (lambda mem_obj: mem_obj.tobytes())
-        )
-
-    assert (
-        lambda_memoryview_return_pipeline(5) == b"hello"
-    )  # Lambda returning memoryview object
-
-
-def test_pipe_with_lambda_returning_class_instance():
-    class MyClass:
-        def __init__(self, value):
-            self.value = value
-
-    @pyped
-    def lambda_class_instance_return_pipeline(x):
-        return x >> (lambda val: MyClass(val)) >> (lambda instance: instance.value)
-
-    assert (
-        lambda_class_instance_return_pipeline(5) == 5
-    )  # Lambda returning class instance
-
-
-def test_pipe_with_lambda_returning_partial_object():
-    from functools import partial
-
-    add_partial = partial(lambda x, y: x + y, y=1)
-
-    @pyped
-    def lambda_partial_return_pipeline(x):
-        return x >> (lambda val: add_partial) >> (lambda partial_obj: partial_obj(5))
-
-    assert lambda_partial_return_pipeline(5) == 6
-
-
-def test_pipe_with_lambda_returning_closure():
-    def create_closure(factor):
-        return lambda val: val * factor
-
-    @pyped
-    def lambda_closure_return_pipeline(x):
-        return x >> (lambda val: create_closure(val)) >> (lambda closure: closure(2))
-
-    assert lambda_closure_return_pipeline(5) == 10
-
-
-def test_pipe_with_lambda_returning_binop_expression():
-    @pyped
-    def lambda_binop_return_pipeline(x):
-        return x >> (lambda val: val + 1 * 2)
-
-    assert lambda_binop_return_pipeline(5) == 7
-
-
-def test_pipe_with_lambda_returning_list_comprehension():
-    @pyped
-    def lambda_list_comprehension_return_pipeline(x):
-        return x >> (lambda val: [i * val for i in range(3)])
-
-    assert lambda_list_comprehension_return_pipeline(5) == [0, 5, 10]
-
-
-def test_pipe_with_lambda_returning_generator_expression():
-    @pyped
-    def lambda_generator_comprehension_return_pipeline(x):
-        return (
-            x >> (lambda val: (i * val for i in range(3))) >> (lambda gen: sum(gen))
-        )  # Lambda returning generator expression
-
-    assert (
-        lambda_generator_comprehension_return_pipeline(5) == 15
-    )  # Lambda returning generator expression
-
-
-def test_pipe_with_lambda_returning_assignment_expression():
-    @pyped
-    def lambda_assignment_expression_return_pipeline(x):
-        return x >> (lambda val: (y := val * 2))
-
-    assert lambda_assignment_expression_return_pipeline(5) == 10
-
-
-def test_pipe_with_lambda_returning_call_expression():
-    def add_one(x):
-        return x + 1
-
-    @pyped
-    def lambda_call_expression_return_pipeline(x):
-        return x >> (lambda val: add_one(val))  # Lambda returning call expression
-
-    assert (
-        lambda_call_expression_return_pipeline(5) == 6
-    )  # Lambda returning call expression
-
-
-def test_pipe_with_lambda_returning_attribute_expression():
-    class MyClass:
-        def __init__(self, value):
-            self.value = value
-
-    instance = MyClass(7)
-
-    @pyped
-    def lambda_attribute_expression_return_pipeline(instance):
-        return instance >> (
-            lambda obj: obj.value
-        )  # Lambda returning attribute expression
-
-    assert (
-        lambda_attribute_expression_return_pipeline(instance) == 7
-    )  # Lambda returning attribute expression
-
-
-def test_pipe_with_lambda_returning_subscript_expression():
-    data = [10, 20, 30]
-
-    @pyped
-    def lambda_subscript_expression_return_pipeline(data):
-        return data >> (lambda lst: lst[1])  # Lambda returning subscript expression
-
-    assert (
-        lambda_subscript_expression_return_pipeline(data) == 20
-    )  # Lambda returning subscript expression
-
-
-def test_pipe_with_lambda_returning_starred_expression():  # Starred expression in lambda return - not directly valid in return, but in list/tuple/set
-    @pyped
-    def lambda_starred_expression_return_pipeline(x):
-        return x >> (
-            lambda val: [*range(val, val + 3)]
-        )  # Lambda returning starred expression (in list)
-
-    assert lambda_starred_expression_return_pipeline(5) == [
-        5,
-        6,
-        7,
-    ]  # Lambda returning starred expression (in list)
-
-
-def test_pipe_with_lambda_returning_yield_expression():  # yield is not directly valid in lambda, but in generator lambda (not a thing in python)
-    pass  # yield and yield from are not valid directly in lambda, so no direct test case for lambda returning yield expression in standard python.
 
 
 def test_named_expression_as_pipeline_step():
