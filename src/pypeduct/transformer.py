@@ -11,13 +11,11 @@ from ast import (
     If,
     Lambda,
     Load,
-    LShift,
     Name,
     NamedExpr,
     NodeTransformer,
     Return,
     RShift,
-    copy_location,
     expr,
     keyword,
 )
@@ -26,7 +24,7 @@ from ast import (
 )
 from builtins import ExceptionGroup
 from collections.abc import Sequence
-from typing import Any, Self, final
+from typing import Any, Callable, Self, final
 
 
 class PipeTransformError(ExceptionGroup):
@@ -62,37 +60,53 @@ class PipeTransformError(ExceptionGroup):
 
 @final
 class PipeTransformer(NodeTransformer):
-    def __init__(self) -> None:
+    def __init__(self, hofs: set[Callable]) -> None:
         self.lambda_counter = 0
         self.assignment_stack: list[list[Assign]] = [[]]
         self.current_block_assignments: list[Assign] = []
         self.generator_depth = 0
         self.in_lambda = False
-        self.function_params = {}
+        self.function_params = {}  # {name: (num_pos_args, has_varargs)}
+        self.hofs = hofs
 
     def visit_FunctionDef(self, node: FunctionDef) -> FunctionDef:
-        # Record the number of positional parameters for the function
+        new_body: list[AST] = []
+        for stmt in node.body:
+            self.current_block_assignments = []
+            processed = self.visit(stmt)
+            new_body.extend(self.current_block_assignments)
+            if isinstance(processed, list):
+                new_body.extend(processed)
+            else:
+                new_body.append(processed)
+        node.body = new_body
         num_pos_args = len(node.args.posonlyargs) + len(node.args.args)
-        self.function_params[node.name] = num_pos_args
+        has_varargs = node.args.vararg is not None
+        self.function_params[node.name] = (num_pos_args, has_varargs)
         self.generic_visit(node)
         return node
 
     def visit_BinOp(self, node: BinOp) -> AST:
-        if not isinstance(node.op, (LShift, RShift)):
+        if not isinstance(node.op, RShift):
             return self.generic_visit(node)
 
         left = self.visit(node.left)
-        original_right = node.right
+        original_right = node.right  # Keep the original right node before visiting
 
-        # Handle walrus operator in pipeline
+        # Check if the right is a NamedExpr (walrus operator) and not in a generator
         if isinstance(original_right, NamedExpr) and self.generator_depth == 0:
+            # Process the value of the NamedExpr (right.value) without visiting the NamedExpr itself
             processed_value = self.visit(original_right.value)
             target = original_right.target
+            # Handle the walrus operator within the pipeline context
             return self._handle_walrus(node, left, processed_value, target)
         else:
+            # Visit the right node normally
             right = self.visit(original_right)
+            # Preserve bitwise shifts for constants like numbers only.
             if isinstance(original_right, ast.Constant):
                 return BinOp(left=left, op=node.op, right=right)
+            # Proceed to build the pipeline call
             return self._build_pipeline_call(node, left, right)
 
     def _handle_walrus(
@@ -145,26 +159,32 @@ class PipeTransformer(NodeTransformer):
         right: expr,
         original_kwargs_name: str | None = None,
     ) -> expr:
-        """Build the pipeline call, unpacking tuples for multi-param functions."""
+        """Build the pipeline call, unpacking tuples when appropriate."""
         keywords_to_add = []
         if isinstance(right, Lambda) and right.args.kwarg and original_kwargs_name:
             keywords_to_add.append(
                 keyword(arg=None, value=Name(id=original_kwargs_name, ctx=Load()))
             )
 
-        # Determine number of positional arguments expected by the target function
-        num_pos_args = 0
-        if isinstance(right, Lambda):
-            num_pos_args = getattr(
-                right,
-                "_pyped_pos_args",
-                len(right.args.posonlyargs) + len(right.args.args),
-            )
-        elif isinstance(right, Name):
-            num_pos_args = self.function_params.get(right.id, 0)
+        # Determine the target function's parameters
+        required_pos = 0
+        has_varargs = False
+        func_node = right.func if isinstance(right, Call) else right
 
-        # Prepare arguments: unpack if function expects multiple positional args
-        if num_pos_args > 1:
+        if isinstance(func_node, Lambda):
+            required_pos, has_varargs = getattr(
+                func_node, "_pyped_pos_args", (0, False)
+            )
+        elif isinstance(func_node, Name):
+            required_pos, has_varargs = self.function_params.get(
+                func_node.id, (0, False)
+            )
+
+        # Check if we should unpack the tuple
+        is_tuple = isinstance(left, ast.Tuple)
+        should_unpack = is_tuple and (required_pos > 1 or has_varargs)
+
+        if should_unpack:
             args = [ast.Starred(value=left, ctx=ast.Load())]
         else:
             args = [left]
@@ -246,10 +266,9 @@ class PipeTransformer(NodeTransformer):
         return node
 
     def visit_Lambda(self, node: Lambda) -> expr:
-        # Record the number of positional parameters for the lambda
         num_pos_args = len(node.args.posonlyargs) + len(node.args.args)
-        # Lambdas are anonymous, so track via a custom attribute
-        setattr(node, "_pyped_pos_args", num_pos_args)
+        has_varargs = node.args.vararg is not None
+        setattr(node, "_pyped_pos_args", (num_pos_args, has_varargs))
         self.generic_visit(node)
         return node
 
