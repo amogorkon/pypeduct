@@ -4,13 +4,15 @@ import ast
 import inspect
 import linecache
 import sys
-from functools import wraps
+from functools import reduce, wraps
 from textwrap import dedent
 from typing import Any, Callable, Type, TypeVar
 
 from pypeduct.transformer import PipeTransformer
 
 T = TypeVar("T", bound=Callable[..., Any] | type[Any])
+
+DEFAULT_HOF = {filter, map, reduce}
 
 
 def print_code(code, original=True):
@@ -22,12 +24,16 @@ def print_code(code, original=True):
 
 
 def pyped(
-    func_or_class: T | None = None, *, verbose: bool = False
+    func_or_class: T | None = None,
+    *,
+    verbose: bool = False,
+    add_hofs: set[Callable] | None = None,
 ) -> T | Callable[[T], T]:
-    """Decorator transforming >>/<< operators into pipeline operations with optional verbosity."""
+    """Decorator transforming the >> operator into pipeline operations."""
 
     def actual_decorator(obj: T) -> T:
         transformed = None
+        hofs = DEFAULT_HOF | (add_hofs or set())
 
         @wraps(obj)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -35,9 +41,9 @@ def pyped(
 
             if transformed is None:
                 if inspect.isclass(obj):
-                    transformed = _transform_class(obj, verbose)
+                    transformed = _transform_class(obj, verbose, hofs)
                 else:
-                    transformed = _transform_function(obj, verbose)
+                    transformed = _transform_function(obj, verbose, hofs)
             return transformed(*args, **kwargs)
 
         return wrapper  # type: ignore
@@ -45,7 +51,7 @@ def pyped(
     return actual_decorator(func_or_class) if func_or_class else actual_decorator
 
 
-def _transform_function(func: Callable, verbose: bool) -> Callable:
+def _transform_function(func: Callable, verbose: bool, hofs: set[Callable]) -> Callable:
     """Performs the AST transformation using the original function's context."""
     try:
         source = inspect.getsource(func)
@@ -55,7 +61,7 @@ def _transform_function(func: Callable, verbose: bool) -> Callable:
     if verbose:
         print_code(source, original=True)
 
-    tree = PipeTransformer().visit(ast.parse(source))
+    tree = PipeTransformer(hofs).visit(ast.parse(source))
 
     top_level_node = tree.body[0]
     if isinstance(
@@ -96,7 +102,7 @@ def _retrieve_source(func):
     return result.split(":", 1)[1]
 
 
-def _transform_class(cls: Type[Any], verbose: bool) -> Type[Any]:
+def _transform_class(cls: Type[Any], verbose: bool, hofs: set[Callable]) -> Type[Any]:
     """Transforms a class by applying AST transformations to its methods, including nested classes."""
     try:
         source = inspect.getsource(cls)
@@ -139,7 +145,7 @@ def _transform_class(cls: Type[Any], verbose: bool) -> Type[Any]:
         print_code(source, original=True)
 
     tree = ast.parse(source)
-    transformer = PipeTransformer()
+    transformer = PipeTransformer(hofs)
     transformed_tree = transformer.visit(tree)
 
     top_level_node = transformed_tree.body[0]
