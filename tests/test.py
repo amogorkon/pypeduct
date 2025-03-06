@@ -1,5 +1,7 @@
 """WIP tests for pypeduct."""
 
+from __future__ import annotations
+
 import inspect
 
 from pypeduct import pyped as pyped
@@ -7,29 +9,23 @@ from pypeduct import pyped as pyped
 # ===========================================
 
 
-def test_function_with_multiple_default_args():
-    @pyped(verbose=True)
-    def compute():
-        def add_numbers(x, y=10, z=5):
-            return x + y + z
+def test_pipe_with_custom_object_walrus():
+    class CustomObject:
+        def __init__(self, value: int) -> None:
+            self.value = value
 
-        return 5 >> add_numbers
+        def increment(self, _) -> CustomObject:
+            self.value += 1
+            return self
 
-    assert compute() == 20
-
-
-def test_tuple_unpacking_pipe():
-    def add(x: int, y: int) -> int:
-        return x + y
-
-    def multiply_and_add(x: int, y: int) -> int:
-        return x * y, x + y
+        def foo(self, x: CustomObject) -> int:
+            return x.value * 2
 
     @pyped(verbose=True)
-    def multiple_assignments() -> tuple[int, int]:
-        return (1, 2) >> multiply_and_add >> add
+    def custom_object_pipe() -> int:
+        return (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
 
-    assert multiple_assignments() == 5  # (1*2), (1+2) => 2, 3 => 2 + 3 => 5
+    assert custom_object_pipe() == 24
 
 
 # ===========================================

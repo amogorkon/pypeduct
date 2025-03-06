@@ -1,6 +1,8 @@
+import itertools
+
 import pytest
 
-from pypeduct import pyped
+from pypeduct import PipeTransformError, pyped
 
 # =====================
 # Higher-Order Functions
@@ -37,7 +39,7 @@ def test_hof_non_standard_name():
 
 
 def test_hof_with_placeholder():
-    @pyped(verbose=True)
+    @pyped
     def custom_usage():
         return (lambda x: x > 5) >> filter(..., [1, 6, 2, 8])
 
@@ -50,7 +52,7 @@ def test_hof_with_placeholder():
 
 
 def test_placeholder_positional():
-    @pyped(verbose=True)
+    @pyped
     def math_operations():
         return 5 >> pow(2, ...)  # Should become pow(2, 5)
 
@@ -58,7 +60,7 @@ def test_placeholder_positional():
 
 
 def test_placeholder_keyword():
-    @pyped(verbose=True)
+    @pyped
     def config_processing():
         return {"a": 1} >> print(..., flush=True)
 
@@ -68,7 +70,7 @@ def test_placeholder_keyword():
 
 
 def test_placeholder_no_unpacking():
-    @pyped(verbose=True)
+    @pyped
     def tuple_handling():
         return (1, 2) >> sum(...)  # sum((1,2)) not sum(1,2)
 
@@ -76,15 +78,15 @@ def test_placeholder_no_unpacking():
 
 
 def test_placeholder_mixed_args():
-    @pyped(verbose=True)
-    def mixed_usage():
-        return 10 >> range(..., 0, ...)  # range(10, 0, 10)
+    with pytest.raises(PipeTransformError):
 
-    assert list(mixed_usage()) == []
+        @pyped
+        def mixed_usage():
+            return 10 >> range(..., 0, ...)  # only one ... allowed
 
 
 def test_placeholder_multiple_ellipsis():
-    with pytest.raises(SyntaxError):
+    with pytest.raises(PipeTransformError):
 
         @pyped
         def invalid_usage():
@@ -92,11 +94,11 @@ def test_placeholder_multiple_ellipsis():
 
 
 def test_placeholder_actual_ellipsis():
-    @pyped(verbose=True)
-    def real_ellipsis_usage():
-        return ... >> bool  # Should pass through real Ellipsis
+    with pytest.raises(PipeTransformError):
 
-    assert real_ellipsis_usage() is True
+        @pyped
+        def real_ellipsis_usage():
+            return ... >> bool  # no point in using ... like this
 
 
 # =====================
@@ -105,7 +107,7 @@ def test_placeholder_actual_ellipsis():
 
 
 def test_hof_with_tuple_data():
-    @pyped(verbose=True)
+    @pyped
     def tuple_with_hof():
         return (1, 2, 3) >> zip([4, 5, 6]) >> list
 
@@ -113,7 +115,7 @@ def test_hof_with_tuple_data():
 
 
 def test_placeholder_invalid_position():
-    @pyped(verbose=True)
+    @pyped
     def bad_position():
         return 5 >> int(...)  # int(5)
 
@@ -121,7 +123,7 @@ def test_placeholder_invalid_position():
 
 
 def test_mixed_hof_and_placeholder():
-    @pyped(verbose=True)
+    @pyped
     def complex_case():
         return [1, "2", 3] >> filter(..., key=str.isdigit) >> map(int) >> sum
 
@@ -129,15 +131,12 @@ def test_mixed_hof_and_placeholder():
         complex_case()
 
 
-import itertools
-
-
 def test_custom_hof_registry():
     # Custom HOF that reverses argument order
     def reversed_filter(func, iterable):
         return filter(func, iterable)
 
-    @pyped(add_hofs={reversed_filter}, extend_default_hofs=False)
+    @pyped(add_hofs={reversed_filter})
     def custom_behavior():
         return range(10) >> reversed_filter(lambda x: x % 3 == 0)
 
@@ -151,13 +150,3 @@ def test_default_extension():
         return [(1, 2), (3, 4)] >> itertools.starmap(pow) >> list
 
     assert extended_defaults() == [1, 81], "Should handle starmap + keep defaults"
-
-
-def test_complete_override():
-    # Simulate HOF needing data as first arg
-    @pyped(add_hofs=set(), extend_default_hofs=False)
-    def no_special_handling():
-        return [1, 2, 3] >> filter(lambda x: x > 1)
-
-    with pytest.raises(TypeError):
-        no_special_handling()  # filter() called as filter([1,2,3], lambda)

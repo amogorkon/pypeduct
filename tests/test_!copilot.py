@@ -26,8 +26,8 @@ def test_basic_pipeline(input_value, func, expected):
 @pytest.mark.parametrize(
     "exception, func",
     [
-        (TypeError, lambda x: x + "a"),  # Causes TypeError
-        (ValueError, lambda x: int("a")),  # Causes ValueError
+        (TypeError, lambda x: x + "a"),
+        (ValueError, lambda x: int("a")),
     ],
 )
 def test_exception_handling_in_pipeline(exception, func):

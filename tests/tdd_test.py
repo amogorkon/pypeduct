@@ -7,8 +7,8 @@ import sys
 
 import pytest
 
+from pypeduct.exceptions import PipeTransformError
 from pypeduct.pyping import pyped
-from pypeduct.transformer import PipeTransformError
 
 
 def test_transformer_error_propagation():

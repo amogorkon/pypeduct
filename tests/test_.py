@@ -94,13 +94,24 @@ def test_tertiary_operator():
 
 def test_binary_shift_vs_pipe():
     @pyped
-    def binary_shift_with_pipe(x: int) -> int:
+    def binary_shift_right_with_pipe(x: int) -> int:
         return x >> 2
 
-    def binary_shift_without_pipe(x: int) -> int:
+    def binary_shift_right_without_pipe(x: int) -> int:
         return x >> 2
 
-    assert binary_shift_with_pipe(5) == binary_shift_without_pipe(5) == 5 >> 2 == 1
+    @pyped
+    def binary_shift_left_with_pipe(x: int) -> int:
+        return x << 2
+
+    def binary_shift_left_without_pipe(x: int) -> int:
+        return x << 2
+
+    with pytest.raises(TypeError):
+        binary_shift_right_with_pipe(5)
+
+    assert binary_shift_right_without_pipe(5) == 5 >> 2
+    assert binary_shift_left_with_pipe(5) == 5 << 2 == binary_shift_left_without_pipe(5)
 
 
 def test_complex_types():
