@@ -24,6 +24,8 @@ from ast import (
 )
 from typing import Callable, final
 
+from pypeduct.helpers import NODE, _ensure_loc
+
 
 @final
 class PipeTransformer(NodeTransformer):
