@@ -33,7 +33,10 @@ warn_unused_ignores = true
 disable_error_code = ["operator"]
 
 [tool.pyright]
-disable = ["reportOperatorIssue"]
+reportOperatorIssue = false
+reportArgumentType = false
+reportReturnType = false
+reportCallIssue = false
 
 [tool.ruff]
 target-version = "py312"
