@@ -61,7 +61,7 @@ def _transform_function(func: Callable, verbose: bool, hofs: set[Callable]) -> C
     if verbose:
         print_code(source, original=True)
 
-    tree = PipeTransformer(hofs).visit(ast.parse(source))
+    tree = PipeTransformer(hofs, func.__globals__.copy()).visit(ast.parse(source))
 
     top_level_node = tree.body[0]
     if isinstance(
@@ -81,7 +81,7 @@ def _transform_function(func: Callable, verbose: bool, hofs: set[Callable]) -> C
         for name, cell in zip(free_vars, closure):
             ctx[name] = cell.cell_contents
 
-    exec(compile(tree, filename="<pyped>", mode="exec"), ctx)
+    exec(compile(tree, filename="<pyped>", mode="exec"), ctx)  # type: ignore
     return ctx[func.__name__]
 
 
