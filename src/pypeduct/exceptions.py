@@ -14,9 +14,7 @@ class PipeTransformError(ExceptionGroup):
     ) -> Self:
         if not exceptions:
             raise ValueError("exceptions must be a non-empty sequence")
-        instance = super().__new__(cls, message, exceptions)
-        instance.context = context or {}
-        return instance
+        return super().__new__(cls, message, exceptions)
 
     def __init__(
         self,
