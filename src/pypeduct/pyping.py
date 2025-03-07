@@ -61,7 +61,9 @@ def _transform_function(
     if verbose:
         print_code(source, original=True)
 
-    tree = PipeTransformer(hofs, func.__globals__.copy()).visit(ast.parse(source))
+    tree = PipeTransformer(hofs, func.__globals__.copy(), verbose=verbose).visit(
+        ast.parse(source)
+    )
 
     top_level_node = tree.body[0]
     if isinstance(
@@ -145,7 +147,7 @@ def _transform_class(cls: Type[Any], verbose: bool, hofs: set[Callable]) -> Type
         print_code(source, original=True)
 
     tree = ast.parse(source)
-    transformer = PipeTransformer(hofs)
+    transformer = PipeTransformer(hofs, verbose=verbose)
     transformed_tree = transformer.visit(tree)
 
     top_level_node = transformed_tree.body[0]

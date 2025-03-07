@@ -1,3 +1,4 @@
+import inspect
 from ast import (
     AST,
     Assign,
@@ -19,16 +20,18 @@ from ast import (
     stmt,
 )
 from collections.abc import Sequence
-import inspect
 from typing import Callable, final, get_type_hints, override
 
 from pypeduct.exceptions import PipeTransformError
-from pypeduct.helpers import NODE, ensure_loc, should_unpack
+from pypeduct.helpers import NODE, ensure_loc
 
 
 @final
 class PipeTransformer(NodeTransformer):
-    def __init__(self, hofs: dict[str, Callable], current_globals=None) -> None:
+    def __init__(
+        self, hofs: dict[str, Callable], current_globals=None, verbose=False
+    ) -> None:
+        self.verbose = verbose
         self.current_block_assignments: list[Assign] = []
         self.function_params = {}
         self.hofs = hofs
@@ -82,13 +85,11 @@ class PipeTransformer(NodeTransformer):
                 return self.generic_visit(node)
 
     def build_pipe_call(self, node: BinOp, left: expr, right: expr) -> Call:
+        # sourcery skip: low-code-quality
         if isinstance(left, Constant) and left.value is Ellipsis:
             raise PipeTransformError(
                 "Why would you put a `...` on the left side of the pipe? 🤔",
             )
-
-        def _is_ellipsis_placeholder(node):
-            return isinstance(node, Constant) and node.value is Ellipsis
 
         match right:
             case Call(func, args, keywords) if (
@@ -101,6 +102,9 @@ class PipeTransformer(NodeTransformer):
                     raise PipeTransformError(
                         "Only one argument position placeholder `...` is allowed in a pipe expression",
                     )
+                self.print(
+                    f"Placeholder case ({args}, {keywords}): {left} into {right}"
+                )
                 new_args = [
                     (
                         left
@@ -117,6 +121,7 @@ class PipeTransformer(NodeTransformer):
                         new_keywords.append(kw)
                 return ensure_loc(Call(func, new_args, new_keywords), node)
             case Call(Name(id=name), args, keywords) if name in self.hofs:
+                self.print(f"HOF case short name ({name} in hofs): {name}")
                 return ensure_loc(
                     Call(Name(name, Load()), args + [left], keywords),
                     node,
@@ -127,6 +132,7 @@ class PipeTransformer(NodeTransformer):
                 args,
                 keywords,
             ) if f"{mod}.{attr}" in self.hofs:
+                self.print(f"HOF qualname ({mod}.{attr} in hofs)")
                 return ensure_loc(
                     Call(
                         Attribute(
@@ -140,6 +146,7 @@ class PipeTransformer(NodeTransformer):
 
             # normal function call, unpack by default if first argument is not specified or not a sequence
             case Call(func, args, keywords):
+                self.print(f"Unpacking case, {left} into {right}")
                 # Determine whether we should star-unpack the piped value
                 star = False
                 func_obj = None
@@ -184,11 +191,13 @@ class PipeTransformer(NodeTransformer):
 
             # Variadic functions
             case Name(id=name) if name in self.function_params:
+                self.print(f"Variadic case: {name} in {self.function_params}")
                 _, has_varargs = self.function_params[name]
                 args = [Starred(left, ctx=Load())] if has_varargs else [left]
                 return ensure_loc(Call(right, args, []), node)
 
             case _:
+                self.print(f"Fall-through case: {left} into {right}")
                 return ensure_loc(Call(right, [left], []), node)
 
     def process_body(self, body: list[stmt]) -> Sequence[NODE]:
@@ -203,3 +212,11 @@ class PipeTransformer(NodeTransformer):
                 processed.append(result)
 
         return original_assignments + processed
+
+    def print(self, msg: str) -> None:
+        if self.verbose:
+            print(f"[DEBUG] {msg}")
+
+
+def _is_ellipsis_placeholder(node):
+    return isinstance(node, Constant) and node.value is Ellipsis
