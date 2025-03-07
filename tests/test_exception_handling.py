@@ -39,17 +39,6 @@ def test_nested_exception_handling_pipe():
     assert nested_exception_pipeline(5) == "Outer Exception"  # Catches outer exception
 
 
-def test_pipe_with_name_error_handling():
-    @pyped
-    def name_error_pipeline():
-        return non_existent_name >> (
-            lambda x: x
-        )  # Using non-existent name - should raise NameError
-
-    with pytest.raises(NameError):
-        name_error_pipeline()  # Expect NameError to be raised
-
-
 def test_pipe_with_type_error_handling():
     @pyped
     def type_error_pipeline():
@@ -62,14 +51,14 @@ def test_pipe_with_type_error_handling():
 
 
 def test_pipe_with_value_error_handling():
+    import math
+
     @pyped
     def value_error_pipeline():
-        return -1 >> (
-            lambda x: math.sqrt(x)
-        )  # Sqrt of negative number - should raise ValueError
+        return -1 >> (lambda x: math.sqrt(x))
 
     with pytest.raises(ValueError):
-        value_error_pipeline()  # Expect ValueError to be raised
+        value_error_pipeline()
 
 
 def test_pipe_with_index_error_handling():
@@ -124,104 +113,51 @@ def test_pipe_with_zero_division_error_handling():
 def test_pipe_with_overflow_error_handling():
     @pyped
     def overflow_error_pipeline():
-        return 2**1000 >> (
-            lambda x: x * 2**1000
-        )  # Operation causing overflow - might raise OverflowError (platform-dependent)
+        return 2.0**1000 >> (lambda x: x**1000)
 
-    with pytest.raises(
-        OverflowError
-    ):  # OverflowError is not consistently raised in Python, might need to adjust expectation
-        overflow_error_pipeline()  # Expect OverflowError to be raised
+    # OverflowError is not consistently raised in Python, might need to adjust expectation
+    with pytest.raises(OverflowError):
+        overflow_error_pipeline()
 
 
 def test_pipe_with_recursion_error_handling():
+    @pyped
     def recursive_func(n):
-        return (
-            n >> (lambda x: recursive_func(x + 1)) if n < 1000 else n
-        )  # Recursive function causing RecursionError
+        return n >> (lambda x: recursive_func(x + 1)) if n < 1000 else n
 
     @pyped
     def recursion_error_pipeline():
         return 0 >> recursive_func  # Deep recursion - should raise RecursionError
 
     with pytest.raises(RecursionError):
-        recursion_error_pipeline()  # Expect RecursionError to be raised
+        recursion_error_pipeline()
 
 
-def test_pipe_with_syntax_error_handling():  # SyntaxError is usually compile-time, but for dynamic code, might be runtime
+def test_pipe_with_syntax_error_handling():
     @pyped
     def syntax_error_pipeline():
-        return 5 >> (
-            lambda x: eval("syntax error")
-        )  # Eval with syntax error - should raise SyntaxError (or similar)
+        return 5 >> (lambda x: eval("syntax error"))
 
-    with pytest.raises(
-        SyntaxError
-    ):  # SyntaxError is compile time, so this might not be caught here.
-        syntax_error_pipeline()  # Expect SyntaxError (or related) to be raised
+    with pytest.raises(SyntaxError):
+        syntax_error_pipeline()
 
 
-def test_pipe_with_indentation_error_handling():  # IndentationError is usually compile-time
-    @pyped
-    def indentation_error_pipeline():
-        return 5 >> (
-            lambda x: x
-            + 1  # Indentation error - should raise IndentationError (or similar)
-        )
-
-    with pytest.raises((
-        IndentationError,
-        SyntaxError,
-    )):  # IndentationError is compile-time, might be SyntaxError in dynamic context
-        indentation_error_pipeline()  # Expect IndentationError or SyntaxError
-
-
-def test_pipe_with_unicode_decode_error_handling():  # UnicodeDecodeError is runtime
+def test_pipe_with_unicode_decode_error_handling():
     @pyped
     def unicode_decode_error_pipeline():
-        return b"\xc2\x00" >> (
-            lambda x: x.decode("utf-8")
-        )  # Invalid UTF-8 bytes - should raise UnicodeDecodeError
+        return b"\xc2\x00" >> (lambda x: x.decode("utf-8"))
 
     with pytest.raises(UnicodeDecodeError):
-        unicode_decode_error_pipeline()  # Expect UnicodeDecodeError
+        unicode_decode_error_pipeline()
 
 
-def test_pipe_with_unicode_encode_error_handling():  # UnicodeEncodeError is runtime
+def test_pipe_with_unicode_encode_error_handling():
     @pyped
     def unicode_encode_error_pipeline():
-        return "€" >> (
-            lambda x: x.encode("ascii")
-        )  # Unicode char not in ASCII - should raise UnicodeEncodeError
+        return "€" >> (lambda x: x.encode("ascii"))
 
     with pytest.raises(UnicodeEncodeError):
-        unicode_encode_error_pipeline()  # Expect UnicodeEncodeError
-
-
-def test_pipe_with_overflow_in_lambda_handling():
-    @pyped
-    def overflow_lambda_pipeline():
-        return 2**1000 >> (
-            lambda x: x * 2**1000
-        )  # Overflow within lambda - might raise OverflowError (platform-dependent)
-
-    with pytest.raises(
-        OverflowError
-    ):  # OverflowError is not consistently raised, might need to adjust
-        overflow_lambda_pipeline()  # Expect OverflowError in lambda
-
-
-def test_pipe_with_recursion_in_lambda_handling():
-    @pyped
-    def recursion_lambda_error_pipeline(n):
-        return n >> (
-            lambda x: (lambda f: lambda y: f(f)(y))(
-                lambda rec: lambda val: rec(rec)(val + 1) if val < 1000 else val
-            )
-        )  # Recursive lambda inside pipeline
-
-    with pytest.raises(RecursionError):
-        recursion_lambda_error_pipeline(0)  # Expect RecursionError in recursive lambda
+        unicode_encode_error_pipeline()
 
 
 def test_pipe_with_generator_exit_handling():
@@ -242,27 +178,25 @@ def test_pipe_with_generator_exit_handling():
     @pyped
     def generator_exit_pipeline():
         gen = generator_with_exit()
-        next(gen)  # Start generator
-        gen.close()  # Trigger GeneratorExit
-        return 5 >> (lambda x: "Generator closed")  # Pipeline after closing generator
+        next(gen)
+        gen.close()
+        return 5 >> (lambda x: "Generator closed")
 
-    assert (
-        generator_exit_pipeline() == "Generator closed"
-    )  # GeneratorExit handling test
+    assert generator_exit_pipeline() == "Generator closed"
 
 
-def test_pipe_with_system_exit_handling():  # SystemExit is a special case, usually not caught like regular exceptions
+def test_pipe_with_system_exit_handling():
     @pyped
     def system_exit_pipeline():
         return 5 >> (lambda x: exit(0))  # Call to exit - should raise SystemExit
 
-    with pytest.raises(
-        SystemExit
-    ):  # SystemExit is special, might not be caught by try/except in pyped.
+    # SystemExit is special, might not be caught by try/except in pyped.
+    with pytest.raises(SystemExit):
         system_exit_pipeline()  # Expect SystemExit to be raised, might terminate test run
 
 
 def test_pipe_with_generator_return_handling():
+    # sourcery skip: remove-unreachable-code
     def generator_with_return():
         yield 1
         return "Generator return value"
@@ -298,3 +232,13 @@ def test_pipe_with_name_error_handling():
 
     with pytest.raises(NameError):
         name_error_pipeline()
+
+
+def test_custom_exception_message():
+    faulty_code = """
+@pyped
+def invalid_syntax():
+    return return
+"""
+    with pytest.raises(SyntaxError):
+        exec(faulty_code, globals())

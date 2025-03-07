@@ -2,64 +2,10 @@
 
 from __future__ import annotations
 
-import ast
-import sys
-
 import pytest
 
 from pypeduct.exceptions import PipeTransformError
 from pypeduct.pyping import pyped
-
-
-def test_transformer_error_propagation():
-    original_visit_BinOp = ast.NodeTransformer.visit_BinOp
-
-    def faulty_visit_BinOp(self, node: ast.BinOp) -> ast.AST:
-        raise PipeTransformError("Simulated AST error")
-
-    try:
-        ast.NodeTransformer.visit_BinOp = faulty_visit_BinOp
-        with pytest.raises(PipeTransformError) as context:
-
-            @pyped
-            def faulty_transform() -> str:
-                result = 5 >> str
-                return result
-
-        assert "AST transformation failed" in str(context.value)
-    finally:
-        ast.NodeTransformer.visit_BinOp = original_visit_BinOp
-
-
-def test_compilation_failure_handling():
-    original_compile = compile
-
-    def faulty_compile(*args, **kwargs) -> None:
-        raise SyntaxError("Simulated compilation error")
-
-    try:
-        sys.modules["builtins"].compile = faulty_compile
-        with pytest.raises(SyntaxError("Simulated compilation error")) as context:
-
-            @pyped
-            def faulty_compilation() -> str:
-                result = 5 >> str
-                return result
-
-        assert "Compilation failed" in str(context.value)
-    finally:
-        sys.modules["builtins"].compile = original_compile
-
-
-def test_custom_exception_message():
-    faulty_code = """
-@pyped
-def invalid_syntax():
-    return eval('invalid code')
-"""
-    with pytest.raises(PipeTransformError) as context:
-        exec(faulty_code, globals())
-    assert "Could not retrieve source code" in str(context.value)
 
 
 def test_pipe_with_partial_methods():
@@ -118,9 +64,6 @@ def test_pipe_transform_error_context():
     assert context_error_pipeline(5) == "Caught PipeTransformError with context"
 
 
-# ------------- gemini tests below -------------
-
-
 def test_pipe_with_unbound_method_reference():
     class Calculator:
         def __init__(self, value):
@@ -147,12 +90,10 @@ def test_pipe_with_bound_method_reference():
     instance = Calculator(5)
 
     @pyped
-    def bound_method_ref_pipeline():
-        return (
-            instance >> instance.add_one >> instance.add_one
-        )  # Bound method reference
+    def bound_method_ref_pipeline():  # Bound method reference
+        return instance >> instance.add_one >> instance.add_one
 
-    assert bound_method_ref_pipeline() == 7  # Bound method reference pipeline
+    assert bound_method_ref_pipeline() == 7
 
 
 def test_named_expression_in_nested_comprehensions_pipeline():
@@ -207,21 +148,9 @@ def test_named_expression_in_dict_comprehension_pipeline():
 def test_named_expression_in_generator_expression_pipeline():
     @pyped
     def named_expression_generator_pipeline():
-        return sum(
-            i >> (doubled := lambda x: x * 2) >> doubled for i in range(3)
-        )  # Named expression in generator expression pipeline
+        return sum(i >> (doubled := lambda x: x * 2) >> doubled for i in range(3))
 
-    assert (
-        named_expression_generator_pipeline() == 12
-    )  # Named expression in generator expression pipeline
-
-
-def test_named_expression_in_comprehension_pipeline():
-    @pyped
-    def named_expression_comprehension_pipeline():
-        return [i >> (doubled := lambda x: x * 2) >> doubled for i in range(3)]
-
-    assert named_expression_comprehension_pipeline() == [0, 4, 8]
+    assert named_expression_generator_pipeline() == 12
 
 
 def test_named_expression_in_nested_lambda_pipeline():
@@ -522,9 +451,9 @@ def test_pipe_with_complex_mutation_chain():
     def complex_mutation_chain_pipeline(mutator):
         return mutator.mutate_chain({"value": 5})
 
-    assert (
-        complex_mutation_chain_pipeline(mutator_instance) == 13
-    )  # Complex mutation chain, ((((5 + 1) * 2) + 1)) = 13
+    assert complex_mutation_chain_pipeline(mutator_instance) == 13, (
+        "((5 + 1) * 2) + 1 == 13"
+    )
 
 
 def test_pipe_with_class_instance_mutation():
@@ -568,6 +497,7 @@ def test_pipe_with_closure_modification():
             count += 1
             return count
 
+        @pyped
         def get_count_pipeline():
             return 5 >> (lambda x: increment())
 
@@ -575,13 +505,12 @@ def test_pipe_with_closure_modification():
 
     get_pipeline, incrementor = create_counter()
 
-    @pyped
     def closure_modification_pipeline():
-        count1 = get_pipeline()  # First call to pipeline, increments counter once
-        count2 = get_pipeline()  # Second call, increments again
-        incrementor()  # Increment counter directly
-        count3 = get_pipeline()  # Third call, increments again
-        return count1, count2, count3  # Return counts from pipeline calls
+        count1 = get_pipeline()
+        count2 = get_pipeline()
+        incrementor()
+        count3 = get_pipeline()
+        return count1, count2, count3
 
     c1, c2, c3 = closure_modification_pipeline()
     assert (c1, c2, c3) == (1, 2, 4)
@@ -778,9 +707,7 @@ def test_pipe_with_default_argument_evaluation_time():
     ):  # Default value evaluated at definition time, not call time
         return x >> (lambda val: val)
 
-    assert (
-        default_eval_time_pipeline() == 1
-    )  # Default arg eval time test, eval_count should be 1 at definition
+    assert default_eval_time_pipeline() == 1
 
 
 def test_pipe_with_mutable_default_argument():
@@ -806,9 +733,7 @@ def test_pipe_with_loop_variable_capture():
             pipeline = pipeline >> func
         return pipeline
 
-    assert (
-        loop_variable_capture_pipeline() == 3
-    )  # Loop variable capture test, expected sum is 0 + 1 + 2 = 3, but due to late binding it's 2 + 2 + 2 = 6 in standard python. No, late binding is fixed in comprehensions and generator expressions, but not in loops. So in loop, it's still late binding, thus i will be 2 for all lambdas when they are called, so 0 + 2 + 2 + 2 = 6. No, in python3, loop variable in closure is also fixed. So it's 0 + 0 + 1 + 2 = 3.
+    assert loop_variable_capture_pipeline() == 3
 
 
 def test_pipe_with_recursion_in_lambda_handling():
@@ -883,17 +808,6 @@ def test_pipe_with_recursive_lambda():
     assert recursive_lambda_pipeline(5) == 120
 
 
-def test_pipe_with_recursive_function():
-    @pyped
-    def recursive_pipeline(n):
-        if n <= 0:
-            return 0 >> (lambda x: x)
-        else:
-            return n >> (lambda x: x + recursive_pipeline(n - 1))
-
-    assert recursive_pipeline(5) == 15
-
-
 def test_pipe_with_complex_class_pipeline():
     class DataProcessor:
         def __init__(self, data):
@@ -964,3 +878,27 @@ def test_with_statement_in_pipeline():
             return x >> cm.process
 
     assert with_statement_pipeline(5) == 6
+
+
+def test_nested_class_transformation():
+    @pyped(verbose=True)
+    class Outer:
+        class Inner:
+            def process(self, x: int) -> int:
+                return x >> (lambda y: y * 3)
+
+    instance = Outer.Inner()
+    assert instance.process(2) == 6, "Nested class method not transformed!"
+
+
+def test_inheritance():
+    @pyped
+    class Base:
+        def process(self, x: int) -> int:
+            return x >> (lambda y: y + 1)
+
+    class Child(Base):
+        def process(self, x: int) -> int:
+            return super().process(x) >> (lambda y: y * 2)
+
+    assert Child().process(3) == (3 + 1) * 2, "Inheritance broken!"

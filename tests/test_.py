@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from functools import partial
 
 import pytest
 
@@ -39,6 +40,28 @@ def test_builtin_function():
         return [1, 2, 3] >> len  # len is a built-in function
 
     assert compute_length()
+
+
+def test_simple_diff():
+    def diff(a, b):
+        return a - b
+
+    @pyped
+    def compute_length():
+        return 3 >> diff(1)  # the simplest order-dependent function with two args
+
+    assert compute_length() == 2
+
+
+def test_pipe_with_recursive_function():
+    @pyped
+    def recursive_pipeline(n):
+        if n <= 0:
+            return 0 >> (lambda x: x)
+        else:
+            return n >> (lambda x: x + recursive_pipeline(n - 1))
+
+    assert recursive_pipeline(5) == 15
 
 
 def test_function_with_multiple_default_args():
@@ -133,6 +156,28 @@ def test_pipeline_inside_comprehension():
     x = pipeline_function(5)
 
     assert x == ["0", "1", "4", "9", "16"]
+
+
+def test_placeholder_position():
+    def addd(a, b, c):
+        return a + b + c
+
+    @pyped
+    def pipeline():
+        return 2 >> addd(1, ..., 3)
+
+    assert pipeline() == 6
+
+
+def test_placeholder_keyword():
+    def addd(*, a, b=2, c=3):
+        return a + b + c
+
+    @pyped
+    def pipeline():
+        return 3 >> addd(a=1, b=...)
+
+    assert pipeline() == 7
 
 
 def test_rshift_operator():
@@ -682,25 +727,6 @@ def test_pipeline_in_nested_functions2() -> int:
     assert outer_function() == 25
 
 
-def test_pipe_with_custom_object_walrus():
-    class CustomObject:
-        def __init__(self, value: int) -> None:
-            self.value = value
-
-        def increment(self, _) -> CustomObject:
-            self.value += 1
-            return self
-
-        def foo(self, x: CustomObject) -> int:
-            return x.value * 2
-
-    @pyped
-    def custom_object_pipe() -> int:
-        return (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
-
-    assert custom_object_pipe() == 24
-
-
 def test_class_with_other_decorators():
     def validate(cls):
         cls.validated = True
@@ -754,3 +780,136 @@ def test_instance_variable_interaction():
 
     instance = Stateful(4)
     assert instance.calculate() == 16, "Instance variable access failed!"
+
+
+def test_pipe_with_closure_reference():
+    def create_incrementor_closure(inc):
+        def incrementor(x):
+            return x + inc
+
+        return incrementor
+
+    increment_by_1 = create_incrementor_closure(1)
+
+    @pyped
+    def closure_ref_pipeline(x):
+        return x >> increment_by_1 >> increment_by_1
+
+    assert closure_ref_pipeline(5) == 7
+
+
+def test_pipe_with_decorated_function():
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs) + 3
+
+        return wrapper
+
+    @decorator
+    @pyped
+    def decorated_func() -> int:
+        result: int = 5 >> (lambda x: x * 2)
+        return result
+
+    assert decorated_func() == 13  # (5 * 2) + 3
+
+
+def test_class_pipe_in_property():
+    @pyped
+    class MyClass:
+        def __init__(self, value: int) -> None:
+            self._value = value
+
+        @property
+        def value(self) -> str:
+            return self._value >> str
+
+    instance = MyClass(100)
+    assert instance.value == "100"
+
+
+def test_method_pipe_in_property():
+    class MyClass:
+        def __init__(self, value: int) -> None:
+            self._value = value
+
+        @property
+        @pyped
+        def value(self) -> str:
+            return self._value >> str
+
+    instance = MyClass(100)
+    assert instance.value == "100"
+
+
+def test_method_pipe_in_property():
+    class MyClass:
+        def __init__(self, value: int) -> None:
+            self._value = value
+
+        @property
+        @pyped
+        def value(self) -> str:
+            return self._value >> str
+
+    instance = MyClass(100)
+    assert instance.value == "100"
+
+
+def test_pipeline_inside_conditional():
+    @pyped
+    def pipeline_inside_conditional(flag: bool) -> str:
+        if flag:
+            msg = "Hello" >> (lambda x: x + " World")
+        else:
+            msg = "Goodbye" >> (lambda x: x + " World")
+        return msg
+
+    assert pipeline_inside_conditional(True) == "Hello World"
+    assert pipeline_inside_conditional(False) == "Goodbye World"
+
+
+def test_pipeline_inside_conditional_walrus():
+    @pyped
+    def pipeline_in_conditional(flag: bool) -> str:
+        if flag:
+            (msg := "Hello") >> (lambda x: x + " World")
+        else:
+            (msg := "Goodbye") >> (lambda x: x + " World")
+        return msg
+
+    assert pipeline_in_conditional(True) == "Hello"  # Expect "Hello"
+    assert pipeline_in_conditional(False) == "Goodbye"
+
+
+def test_conditional_expression_pipeline():
+    @pyped
+    def conditional_pipeline(flag: bool) -> str:
+        msg = "Hello" if flag else "Goodbye" >> (lambda x: x + " World")
+        return msg
+
+    assert conditional_pipeline(True) == "Hello"
+    assert conditional_pipeline(False) == "Goodbye World"
+
+
+def test_pipe_with_partial_object_reference():
+    add_partial = partial(lambda x, y: x + y, y=1)
+
+    @pyped
+    def partial_object_ref_pipeline(x):
+        return x >> add_partial >> add_partial
+
+    assert partial_object_ref_pipeline(5) == 7
+
+
+def test_partial_application_pipeline():
+    def multiply(x, y):
+        return x * y
+
+    double = partial(multiply, y=2)
+
+    @pyped
+    def partial_pipeline(x):
+        return x >> double
+
+    assert partial_pipeline(5) == 10

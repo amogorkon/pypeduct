@@ -54,7 +54,7 @@ def test_tuple_unpacking_pipe():
         return x * y, x + y
 
     @pyped
-    def multiple_assignments() -> tuple[int, int]:
+    def multiple_assignments() -> int:
         return (1, 2) >> multiply_and_add >> add
 
     assert multiple_assignments() == 5  # (1*2), (1+2) => 2, 3 => 2 + 3 => 5
@@ -84,9 +84,27 @@ def test_tuple_with_default_args():
         def add(x: int, y: int = 0) -> int:
             return x + y
 
-        return (1,) >> add  # Should unpack to (1, 0) => 1
+        return (1,) >> add  # Should unpack to x=1, y=0 => 1
 
     assert test_default_args() == 1
+
+
+def test_no_unpacking_to_sequence():
+    def pipe(X: list[int] = None, y=0):
+        for x in X:  # sourcery skip: no-loop-in-tests
+            yield x * y
+
+    @pyped
+    def test1():
+        return [1, 2] >> pipe >> list
+
+    assert test1() == [0, 0]
+
+    @pyped
+    def test2():
+        return [1, 2] >> pipe(y=2) >> list
+
+    assert test2() == [2, 4]
 
 
 def test_variadic_function():

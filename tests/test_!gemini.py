@@ -761,14 +761,6 @@ def test_pipe_with_none_literal():
     assert none_literal_pipeline() is True
 
 
-def test_pipe_with_ellipsis_literal():
-    @pyped
-    def ellipsis_literal_pipeline():
-        return ... >> (lambda x: x is Ellipsis)
-
-    assert ellipsis_literal_pipeline() is True
-
-
 def test_pipe_with_name_constant_true():  # Alias for True
     @pyped
     def true_constant_pipeline():
@@ -811,22 +803,7 @@ def test_pipe_with_dict_of_lambdas():
         funcs = {"add": (lambda v: v + 1), "multiply": (lambda v: v * 2)}
         return x >> funcs["add"] >> funcs["multiply"]
 
-    assert dict_lambda_pipeline(5) == 12  # Pipeline with lambdas from dict
-
-
-def test_pipe_with_set_of_lambdas():
-    @pyped
-    def set_lambda_pipeline(x):
-        funcs = {
-            (lambda v: v + 1),
-            (lambda v: v * 2),
-        }
-        pipeline = x
-        for func in funcs:
-            pipeline = pipeline >> func
-        return pipeline
-
-    assert set_lambda_pipeline(5) == 12
+    assert dict_lambda_pipeline(5) == 12
 
 
 def test_pipe_with_tuple_of_lambdas():
@@ -917,14 +894,6 @@ def test_pipe_with_user_defined_function():
         return x >> add_five  # Using user-defined function
 
     assert user_func_pipeline(5) == 10  # Pipeline with user-defined function
-
-
-def test_pipe_with_name_constant_Ellipsis():  # Alias for ...
-    @pyped
-    def ellipsis_constant_pipeline():
-        return ... >> (lambda x: x is Ellipsis)
-
-    assert ellipsis_constant_pipeline() is True
 
 
 def test_pipe_with_type_error_handling():
@@ -1489,4 +1458,4 @@ def test_named_expression_in_loop_pipeline():
             )  # Named expression in loop
         return pipeline
 
-    assert named_expression_loop_pipeline(5) == 8  # Named expression in loop pipeline
+    assert named_expression_loop_pipeline(5) == 8

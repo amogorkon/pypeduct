@@ -1,17 +1,6 @@
 from pypeduct import pyped
 
 
-def test_nested_class_transformation():
-    @pyped(verbose=True)
-    class Outer:
-        class Inner:
-            def process(self, x: int) -> int:
-                return x >> (lambda y: y * 3)
-
-    instance = Outer.Inner()
-    assert instance.process(2) == 6, "Nested class method not transformed!"
-
-
 def test_method_with_closure():
     def create_processor(scale: int):
         @pyped
@@ -23,19 +12,6 @@ def test_method_with_closure():
 
     processor = create_processor(3)
     assert processor.process(4) == 12, "Closure variable not captured!"
-
-
-def test_inheritance():
-    @pyped
-    class Base:
-        def process(self, x: int) -> int:
-            return x >> (lambda y: y + 1)
-
-    class Child(Base):
-        def process(self, x: int) -> int:
-            return super().process(x) >> (lambda y: y * 2)
-
-    assert Child().process(3) == (3 + 1) * 2, "Inheritance broken!"
 
 
 def test_class_pipe_in_property():

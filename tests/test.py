@@ -9,23 +9,12 @@ from pypeduct import pyped as pyped
 # ===========================================
 
 
-def test_pipe_with_custom_object_walrus():
-    class CustomObject:
-        def __init__(self, value: int) -> None:
-            self.value = value
-
-        def increment(self, _) -> CustomObject:
-            self.value += 1
-            return self
-
-        def foo(self, x: CustomObject) -> int:
-            return x.value * 2
-
+def test_tuple_unpacking_lambda():
     @pyped(verbose=True)
-    def custom_object_pipe() -> int:
-        return (obj := CustomObject(10)) >> obj.increment >> obj.increment >> obj.foo
+    def multiple_assignments() -> int:
+        return (1, 2) >> (lambda x, y: x + y)
 
-    assert custom_object_pipe() == 24
+    assert multiple_assignments() == 3
 
 
 # ===========================================

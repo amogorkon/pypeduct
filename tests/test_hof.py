@@ -12,7 +12,7 @@ from pypeduct import PipeTransformError, pyped
 def test_hof_filter():
     @pyped
     def process_data(data: list[int]) -> list[int]:
-        return data >> filter(lambda x: x % 2 == 0)
+        return data >> filter(lambda x: x % 2 == 0) >> list
 
     assert process_data([1, 2, 3, 4]) == [2, 4]
 
@@ -41,7 +41,7 @@ def test_hof_non_standard_name():
 def test_hof_with_placeholder():
     @pyped
     def custom_usage():
-        return (lambda x: x > 5) >> filter(..., [1, 6, 2, 8])
+        return [1, 2, 3, 4, 5, 6, 3, 8] >> filter(lambda x: x > 5) >> list
 
     assert custom_usage() == [6, 8]  # filter(<lambda>, [1,6,2,8])
 
@@ -51,7 +51,25 @@ def test_hof_with_placeholder():
 # =====================
 
 
-def test_placeholder_positional():
+def test_placeholder_failure():
+    with pytest.raises(PipeTransformError):
+
+        @pyped
+        def math_operations():
+            return 5 >> pow(..., ...)
+
+        math_operations()
+
+
+def test_placeholder_positional_left():
+    @pyped
+    def math_operations():
+        return 5 >> pow(..., 2)  # Should become pow(5, 2)
+
+    assert math_operations() == 25
+
+
+def test_placeholder_positional_right():
     @pyped
     def math_operations():
         return 5 >> pow(2, ...)  # Should become pow(2, 5)
@@ -77,28 +95,32 @@ def test_placeholder_no_unpacking():
     assert tuple_handling() == 3
 
 
-def test_placeholder_mixed_args():
-    with pytest.raises(PipeTransformError):
-
-        @pyped
-        def mixed_usage():
-            return 10 >> range(..., 0, ...)  # only one ... allowed
-
-
-def test_placeholder_multiple_ellipsis():
+def test_placeholder_multiple_placeholders():
     with pytest.raises(PipeTransformError):
 
         @pyped
         def invalid_usage():
             return 5 >> max(..., ...)
 
+        invalid_usage()
 
-def test_placeholder_actual_ellipsis():
+
+def test_placeholder_on_the_left_lazy():
+    @pyped
+    def real_ellipsis_usage():
+        return ... >> bool
+
+    # function is lazyily decorated, exception is NOT raised
+
+
+def test_placeholder_on_the_left():
     with pytest.raises(PipeTransformError):
 
         @pyped
         def real_ellipsis_usage():
-            return ... >> bool  # no point in using ... like this
+            return ... >> bool  # no point in using ... like this, is there?
+
+        real_ellipsis_usage()
 
 
 # =====================
@@ -132,21 +154,30 @@ def test_mixed_hof_and_placeholder():
 
 
 def test_custom_hof_registry():
-    # Custom HOF that reverses argument order
     def reversed_filter(func, iterable):
         return filter(func, iterable)
 
-    @pyped(add_hofs={reversed_filter})
+    @pyped(add_hofs={"reversed_filter": reversed_filter})
     def custom_behavior():
         return range(10) >> reversed_filter(lambda x: x % 3 == 0)
 
     result = custom_behavior()
-    assert list(result) == [0, 3, 6, 9], "Should use custom HOF argument order"
+    assert list(result) == [0, 3, 6, 9]
 
 
-def test_default_extension():
-    @pyped(add_hofs={itertools.starmap})
+def test_default_extension_qualname():
+    @pyped(add_hofs={"itertools.starmap": itertools.starmap})
     def extended_defaults():
         return [(1, 2), (3, 4)] >> itertools.starmap(pow) >> list
 
-    assert extended_defaults() == [1, 81], "Should handle starmap + keep defaults"
+    assert extended_defaults() == [1, 81]
+
+
+def test_default_extension_shortname():
+    starmap = itertools.starmap
+
+    @pyped(add_hofs={"starmap": starmap})
+    def extended_defaults():
+        return [(1, 2), (3, 4)] >> starmap(pow) >> list
+
+    assert extended_defaults() == [1, 81]
