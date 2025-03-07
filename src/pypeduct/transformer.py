@@ -1,267 +1,205 @@
-from __future__ import annotations
-
-import ast
 from ast import (
     AST,
     Assign,
+    Attribute,
     BinOp,
     Call,
-    For,
+    Constant,
     FunctionDef,
-    If,
-    Lambda,
     Load,
     Name,
     NamedExpr,
     NodeTransformer,
     Return,
     RShift,
+    Starred,
+    Store,
     expr,
     keyword,
+    stmt,
 )
-from ast import (
-    stmt as statement,
-)
-from typing import Callable, final
+from collections.abc import Sequence
+import inspect
+from typing import Callable, final, get_type_hints, override
 
-from pypeduct.helpers import NODE, _ensure_loc
+from pypeduct.exceptions import PipeTransformError
+from pypeduct.helpers import NODE, ensure_loc, should_unpack
 
 
 @final
 class PipeTransformer(NodeTransformer):
-    def __init__(self, hofs: set[Callable]) -> None:
-        self.lambda_counter = 0
-        self.assignment_stack: list[list[Assign]] = [[]]
+    def __init__(self, hofs: dict[str, Callable], current_globals=None) -> None:
         self.current_block_assignments: list[Assign] = []
-        self.generator_depth = 0
-        self.in_lambda = False
-        self.function_params = {}  # {name: (num_pos_args, has_varargs)}
+        self.function_params = {}
         self.hofs = hofs
+        self.current_globals = current_globals or {}
 
-    def visit_FunctionDef(self, node: FunctionDef) -> FunctionDef:
-        new_body: list[AST] = []
-        for stmt in node.body:
-            self.current_block_assignments = []
-            processed = self.visit(stmt)
-            new_body.extend(self.current_block_assignments)
-            if isinstance(processed, list):
-                new_body.extend(processed)
+    @override
+    def visit(
+        self, node: AST
+    ) -> AST | list[AST] | None:  # sourcery skip: extract-method
+        match node:
+            case FunctionDef(name, args, body, decorator_list):
+                self.function_params[name] = (
+                    len(args.posonlyargs) + len(args.args),
+                    args.vararg is not None,
+                )
+                processed_body = self.process_body(body)
+                return ensure_loc(
+                    FunctionDef(name, args, processed_body, decorator_list), node
+                )
+
+            case BinOp(
+                left,
+                RShift(),
+                NamedExpr(target=Name(id=var_name, ctx=Store()), value=value),
+            ):
+                next_left = self.visit(left)
+                next_value = self.visit(value)
+                if isinstance(next_value, Call):
+                    new_args = [next_left] + next_value.args
+                    new_call = ensure_loc(
+                        Call(next_value.func, new_args, next_value.keywords), node
+                    )
+                else:
+                    new_call = ensure_loc(Call(next_value, [next_left], []), node)
+                return ensure_loc(
+                    NamedExpr(target=Name(id=var_name, ctx=Store()), value=new_call),
+                    node,
+                )
+
+            case BinOp(left, RShift(), right):
+                return self.build_pipe_call(node, self.visit(left), self.visit(right))
+
+            case Return(value):
+                processed_value = self.visit(value)
+                return [
+                    *self.current_block_assignments,
+                    ensure_loc(Return(value=processed_value), node),
+                ]
+
+            case _:
+                return self.generic_visit(node)
+
+    def build_pipe_call(self, node: BinOp, left: expr, right: expr) -> Call:
+        if isinstance(left, Constant) and left.value is Ellipsis:
+            raise PipeTransformError(
+                "Why would you put a `...` on the left side of the pipe? 🤔",
+            )
+
+        def _is_ellipsis_placeholder(node):
+            return isinstance(node, Constant) and node.value is Ellipsis
+
+        match right:
+            case Call(func, args, keywords) if (
+                placeholder_num := (
+                    sum(_is_ellipsis_placeholder(arg) for arg in args)
+                    + sum(_is_ellipsis_placeholder(kw.value) for kw in keywords)
+                )
+            ) > 0:
+                if placeholder_num > 1:
+                    raise PipeTransformError(
+                        "Only one argument position placeholder `...` is allowed in a pipe expression",
+                    )
+                new_args = [
+                    (
+                        left
+                        if isinstance(arg, Constant) and arg.value is Ellipsis
+                        else arg
+                    )
+                    for arg in args
+                ]
+                new_keywords = []
+                for kw in keywords:
+                    if isinstance(kw.value, Constant) and kw.value.value is Ellipsis:
+                        new_keywords.append(keyword(arg=kw.arg, value=left))
+                    else:
+                        new_keywords.append(kw)
+                return ensure_loc(Call(func, new_args, new_keywords), node)
+            case Call(Name(id=name), args, keywords) if name in self.hofs:
+                return ensure_loc(
+                    Call(Name(name, Load()), args + [left], keywords),
+                    node,
+                )
+
+            case Call(
+                Attribute(value=Name(id=mod), attr=attr, ctx=Load()),
+                args,
+                keywords,
+            ) if f"{mod}.{attr}" in self.hofs:
+                return ensure_loc(
+                    Call(
+                        Attribute(
+                            value=Name(id=mod, ctx=Load()), attr=attr, ctx=Load()
+                        ),
+                        args + [left],
+                        keywords,
+                    ),
+                    node,
+                )
+
+            # normal function call, unpack by default if first argument is not specified or not a sequence
+            case Call(func, args, keywords):
+                # Determine whether we should star-unpack the piped value
+                star = False
+                func_obj = None
+
+                # Try to resolve the function object using our current globals.
+                if isinstance(func, Name):
+                    func_obj = self.current_globals.get(func.id)
+                elif isinstance(func, Attribute):
+                    # Try by attribute name. You might also want to try building a fully-qualified name.
+                    func_obj = self.current_globals.get(func.attr)
+
+                if func_obj is not None:
+                    try:
+                        sig = inspect.signature(func_obj)
+                        params = list(sig.parameters.values())
+                        if params:
+                            first_param = params[0]
+                            # Use get_type_hints to resolve annotations.
+                            hints = get_type_hints(func_obj)
+                            annotation = hints.get(
+                                first_param.name, first_param.annotation
+                            )
+                            # If there is an annotation, and it indicates a kind of Sequence
+                            # (but is not a str or bytes), then we star-unpack.
+                            if (
+                                annotation is not inspect.Parameter.empty
+                                and isinstance(annotation, type)
+                                and issubclass(annotation, Sequence)
+                                and annotation not in (str, bytes)
+                            ):
+                                star = True
+                    except Exception:
+                        # If anything fails, leave 'star' as False.
+                        pass
+
+                if star:
+                    new_args = [Starred(left, ctx=Load())] + args
+                else:
+                    new_args = [left] + args
+
+                return ensure_loc(Call(func, new_args, keywords), node)
+
+            # Variadic functions
+            case Name(id=name) if name in self.function_params:
+                _, has_varargs = self.function_params[name]
+                args = [Starred(left, ctx=Load())] if has_varargs else [left]
+                return ensure_loc(Call(right, args, []), node)
+
+            case _:
+                return ensure_loc(Call(right, [left], []), node)
+
+    def process_body(self, body: list[stmt]) -> Sequence[NODE]:
+        original_assignments = self.current_block_assignments
+        self.current_block_assignments = []
+        processed = []
+        for stmt_node in body:
+            result = self.visit(stmt_node)
+            if isinstance(result, list):
+                processed.extend(result)
             else:
-                new_body.append(processed)
-        node.body = new_body
-        num_pos_args = len(node.args.posonlyargs) + len(node.args.args)
-        has_varargs = node.args.vararg is not None
-        self.function_params[node.name] = (num_pos_args, has_varargs)
-        self.generic_visit(node)
-        return node
+                processed.append(result)
 
-    def visit_BinOp(self, node: BinOp) -> AST:
-        if not isinstance(node.op, RShift):
-            return self.generic_visit(node)
-
-        left = self.visit(node.left)
-        original_right = node.right  # Keep the original right node before visiting
-
-        # Check if the right is a NamedExpr (walrus operator) and not in a generator
-        if isinstance(original_right, NamedExpr) and self.generator_depth == 0:
-            # Process the value of the NamedExpr (right.value) without visiting the NamedExpr itself
-            processed_value = self.visit(original_right.value)
-            target = original_right.target
-            # Handle the walrus operator within the pipeline context
-            return self._handle_walrus(node, left, processed_value, target)
-        else:
-            # Visit the right node normally
-            right = self.visit(original_right)
-            # Preserve bitwise shifts for constants like numbers only.
-            if isinstance(original_right, ast.Constant):
-                return BinOp(left=left, op=node.op, right=right)
-            # Proceed to build the pipeline call
-            return self._build_pipeline_call(node, left, right)
-
-    def _handle_walrus(
-        self, node: BinOp, left: expr, func_call_node: expr, target: Name
-    ) -> expr:
-        """Handles the walrus operator within a pipeline step."""
-        # Construct the function call with left as the first argument
-        if isinstance(func_call_node, Call):
-            call = Call(
-                func=func_call_node.func,
-                args=[left] + func_call_node.args,
-                keywords=func_call_node.keywords,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-        else:
-            # If it's not a Call, assume it's a function reference and create a call
-            call = Call(
-                func=func_call_node,
-                args=[left],
-                keywords=[],
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-
-        # Create the assignment to the target of the walrus operator
-        assignment = Assign(
-            targets=[target],
-            value=call,
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-        )
-        self.current_block_assignments.append(assignment)
-        return call
-
-    def _handle_assignment_node(self, target, call, node):
-        assignment = ast.Assign(
-            targets=[target],
-            value=call,
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-        )
-        self.current_block_assignments.append(assignment)
-        return call
-
-    def _build_pipeline_call(
-        self,
-        node: BinOp,
-        left: expr,
-        right: expr,
-        original_kwargs_name: str | None = None,
-    ) -> expr:
-        """Build the pipeline call, unpacking tuples when appropriate."""
-        keywords_to_add = []
-        if isinstance(right, Lambda) and right.args.kwarg and original_kwargs_name:
-            keywords_to_add.append(
-                keyword(arg=None, value=Name(id=original_kwargs_name, ctx=Load()))
-            )
-
-        # Determine the target function's parameters
-        required_pos = 0
-        has_varargs = False
-        func_node = right.func if isinstance(right, Call) else right
-
-        if isinstance(func_node, Lambda):
-            required_pos, has_varargs = getattr(
-                func_node, "_pyped_pos_args", (0, False)
-            )
-        elif isinstance(func_node, Name):
-            required_pos, has_varargs = self.function_params.get(
-                func_node.id, (0, False)
-            )
-
-        # Check if we should unpack the tuple
-        is_tuple = isinstance(left, ast.Tuple)
-        should_unpack = is_tuple and (required_pos > 1 or has_varargs)
-
-        if should_unpack:
-            args = [ast.Starred(value=left, ctx=ast.Load())]
-        else:
-            args = [left]
-
-        if isinstance(right, Call):
-            return Call(
-                func=right.func,
-                args=args + right.args,
-                keywords=right.keywords + keywords_to_add,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-        else:
-            return Call(
-                func=right,
-                args=args,
-                keywords=keywords_to_add,
-                lineno=node.lineno,
-                col_offset=node.col_offset,
-            )
-
-    def visit_NamedExpr(self, node: NamedExpr) -> expr:
-        if self.in_lambda or self.generator_depth > 0:
-            # Preserve walrus operator inside lambdas/generators
-            return self.generic_visit(node)
-
-        processed_value = self.visit(node.value)
-        assignment = Assign(
-            targets=[node.target],
-            value=processed_value,
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-        )
-        self.current_block_assignments.append(assignment)
-        return Name(id=node.target.id, ctx=Load())
-
-    def visit_If(self, node: If) -> If:
-        node.test = self.visit(node.test)
-
-        # if-body
-        original_assignments = self.current_block_assignments
-        self.current_block_assignments = []
-        node.body = [self.visit(stmt) for stmt in node.body]
-        node.body = self.current_block_assignments + node.body
-
-        # else-body
-        self.current_block_assignments = []
-        node.orelse = [self.visit(stmt) for stmt in node.orelse]
-        node.orelse = self.current_block_assignments + node.orelse
-
-        self.current_block_assignments = original_assignments
-        return node
-
-    def visit_For(self, node: For) -> For:
-        node.target = self.visit(node.target)
-        node.iter = self.visit(node.iter)
-
-        original_assignments = self.current_block_assignments
-        self.current_block_assignments = []
-        node.body = [self.visit(stmt) for stmt in node.body]
-        node.body = self.current_block_assignments + node.body
-        self.current_block_assignments = original_assignments
-
-        return node
-
-    def _generate_lambda_name(self) -> str:
-        self.lambda_counter += 1
-        return f"_lambda_{self.lambda_counter}"
-
-    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> ast.GeneratorExp:
-        self.generator_depth += 1
-        node.elt = self.visit(node.elt)
-        for gen in node.generators:
-            gen.target = self.visit(gen.target)
-            gen.iter = self.visit(gen.iter)
-            gen.ifs = [self.visit(iff) for iff in gen.ifs]
-        self.generator_depth -= 1
-
-        return node
-
-    def visit_Lambda(self, node: Lambda) -> expr:
-        num_pos_args = len(node.args.posonlyargs) + len(node.args.args)
-        has_varargs = node.args.vararg is not None
-        setattr(node, "_pyped_pos_args", (num_pos_args, has_varargs))
-        self.generic_visit(node)
-        return node
-
-    def visit_Return(self, node: Return) -> list[statement]:
-        original_assignments = self.current_block_assignments
-        self.current_block_assignments = []
-        node.value = self.visit(node.value)
-        assignments = self.current_block_assignments
-        self.current_block_assignments = original_assignments
-        return assignments + [node]
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> ast.ClassDef:
-        new_body = []
-        for stmt in node.body:
-            self.current_block_assignments = []
-
-            processed_stmt = self.visit(stmt)
-
-            new_body.extend(self.current_block_assignments)
-
-            if isinstance(processed_stmt, list):
-                new_body.extend(processed_stmt)
-            else:
-                new_body.append(processed_stmt)
-
-        node.body = new_body
-        return node
+        return original_assignments + processed
