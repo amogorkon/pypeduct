@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import ast
 import inspect
 import linecache
@@ -12,7 +10,7 @@ from pypeduct.transformer import PipeTransformer
 
 T = TypeVar("T", bound=Callable[..., Any] | type[Any])
 
-DEFAULT_HOF = {filter, map, reduce}
+DEFAULT_HOF = {"filter": filter, "map": map, "reduce": reduce}
 
 
 def print_code(code, original=True):
@@ -27,13 +25,13 @@ def pyped(
     func_or_class: T | None = None,
     *,
     verbose: bool = False,
-    add_hofs: set[Callable] | None = None,
+    add_hofs: dict[str, Callable] | None = None,
 ) -> T | Callable[[T], T]:
     """Decorator transforming the >> operator into pipeline operations."""
 
     def actual_decorator(obj: T) -> T:
         transformed = None
-        hofs = DEFAULT_HOF | (add_hofs or set())
+        hofs = DEFAULT_HOF | (add_hofs or {})
 
         @wraps(obj)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -51,7 +49,9 @@ def pyped(
     return actual_decorator(func_or_class) if func_or_class else actual_decorator
 
 
-def _transform_function(func: Callable, verbose: bool, hofs: set[Callable]) -> Callable:
+def _transform_function(
+    func: Callable, verbose: bool, hofs: dict[str, Callable]
+) -> Callable:
     """Performs the AST transformation using the original function's context."""
     try:
         source = inspect.getsource(func)
