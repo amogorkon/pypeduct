@@ -10,7 +10,7 @@ Pypeduct's tuple unpacking is governed by the following principles:
 
 **Default to Unpacking Tuples, Placeholder for Override.**
 
-* **Default Behavior: Unpack.** Always Unpack Tuples. When a tuple is piped into a function, pypeduct will always attempt to unpack the tuple elements as positional arguments to the function, **filling in default arguments automatically when available**.
+* **Default Behavior: Unpack.** Always Unpack Tuples. When a tuple is piped into a function, pypeduct will always attempt to unpack the tuple elements as positional arguments to the function, **filling in default arguments automatically when available**, unless the function only has a single argument.
 * **Lists and other Iterables are Passed As-Is**: When a list is piped into a function, it will always be passed as a single argument.
 * **Placeholder Override: Explicit `...` Disables Unpacking.** The argument position indicator or "placeholder" (`...`) provides the most direct control and **completely disables** the automatic tuple unpacking. Only a single placeholder is allowed per function call and it can be used for positional or keyword arguments.
 
@@ -26,6 +26,7 @@ graph LR
     B -- No --> C{Is Piped Value a Tuple?}
     C -- No (Not a Tuple) -->  I[Value is Passed As-Is at First Position]
     C -- Yes --> F{How Many Arguments in the Function?}
+    F -- One Argument --> I[Value is Passed As-Is at First Position]
     F -- Too Few Arguments --> G[Error: Not Enough Arguments]
     F -- Matches or Fills Defaults --> H[Function Called with Unpacked Arguments]
     F -- Too Many Arguments --> J[Error: function_name takes X positional arguments but Y were given]
