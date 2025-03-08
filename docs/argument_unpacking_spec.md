@@ -28,7 +28,7 @@ graph LR
     C -- Yes --> F{How Many Arguments in the Function?}
     F -- Too Few Arguments --> G[Error: Not Enough Arguments]
     F -- Matches or Fills Defaults --> H[Function Called with Unpacked Arguments]
-    F -- Too Many Arguments --> J[Error: Too Many Arguments]
+    F -- Too Many Arguments --> J[Error: function_name() takes X positional arguments but Y were given]
     G --> Z[End]
     H --> Z
     J --> Z
@@ -36,9 +36,10 @@ graph LR
 ```
 
 ### 3.1 Handling Default Arguments
-Shallow Unpacking Only: Tuple unpacking will only unpack the top-level elements of the tuple. Nested structures, such as (1, (2, 3)), will be passed as-is for the nested elements.
 
-Default Arguments: Default arguments in the function are automatically used to fill in any missing parameters from the tuple as far as possible. For example:
+**Default Argument Filling Rule:** If a function has default arguments, the tuple will be **unpacked up to the number of required parameters**, and **remaining parameters will be filled with defaults**.
+
+Shallow Unpacking Only: Tuple unpacking will only unpack the top-level elements of the tuple. Nested structures, such as `(1, (2, 3))`, will be passed as-is for the nested elements.
 
 ```python
 def greet(name, message="Hello"):
@@ -46,38 +47,26 @@ def greet(name, message="Hello"):
 
 ("Alice",) >> greet  # -> greet("Alice", "Hello")
 ("Alice", "Hi") >> greet  # -> greet("Alice", "Hi")
+```
 
-#Error for Too Few Arguments: If the tuple provides fewer arguments than the function requires (without sufficient defaults), an error is raised during execution:
+#### Error for Too Few Arguments
+If the tuple provides fewer arguments than the function requires (without sufficient defaults), an error is raised:
 
+```python
 def greet(name, message, punctuation="!"):
     return f"{message}, {name}{punctuation}"
 
-("Alice",) >> greet  # Raises: TypeError: Expected at least 2 arguments, got 1
-# Error for Too Many Arguments: If the tuple provides more arguments than the function can handle (without variadic parameters), an error is also raised:
+("Alice",) >> greet  # Raises: TypeError: greet() missing 1 required positional argument: 'message'
+```
 
+#### Error for Too Many Arguments
+If the tuple provides more arguments than the function can handle (without variadic parameters), an error is raised:
+
+```python
 def greet(name, message):
     return f"{message}, {name}"
 
-("Alice", "Hi", "!") >> greet  # Raises: TypeError: Too many arguments provided
-```
-
-* **Default arguments are automatically filled.** If a function has default arguments, a tuple will be unpacked as far as possible, filling in defaults when needed.
-
-```python
-def greet(name, message="Hello"):
-    return f"{message}, {name}!"
-
-("Alice",) >> greet  # Now works: greet("Alice", "Hello")
-("Alice", "Hi") >> greet  # Works: greet("Alice", "Hi")
-```
-
-* **If a function requires more arguments than provided in the tuple (without defaults), an error is raised.**
-
-```python
-def greet(name, message, punctuation="!"):
-    return f"{message}, {name}{punctuation}"
-
-("Alice",) >> greet  # TypeError: Expected at least 2 arguments, got 1
+("Alice", "Hi", "!") >> greet  # Raises: TypeError: greet() takes 2 positional arguments but 3 were given
 ```
 
 ### 3.2 Handling *args (Variadic Functions)
@@ -90,6 +79,8 @@ def collect_args(*args):
 (1, 2) >> collect_args  # Returns (1, 2), since *args absorbs multiple values
 
 (1, 2) >> collect_args(...)  # Returns ((1, 2),), since ... disables unpacking
+
+() >> collect_args  # Returns (), empty tuple is passed without error
 ```
 
 ### 3.3 Common Use Cases
@@ -205,4 +196,4 @@ def combine(a, b, c):
 
 ## 4. Conclusion
 
-This specification comprehensively defines sequence unpacking and argument insertion in pypeduct pipelines.  The argument position placeholder (...) provides explicit control and disables the unpacking, offering users maximum flexibility in constructing their data processing pipelines.
+This specification comprehensively defines sequence unpacking and argument insertion in pypeduct pipelines. The argument position placeholder (`...`) provides explicit control and disables the unpacking, offering users maximum flexibility in constructing their data processing pipelines.
