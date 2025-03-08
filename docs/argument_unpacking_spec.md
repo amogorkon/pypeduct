@@ -28,7 +28,7 @@ graph LR
     C -- Yes --> F{How Many Arguments in the Function?}
     F -- Too Few Arguments --> G[Error: Not Enough Arguments]
     F -- Matches or Fills Defaults --> H[Function Called with Unpacked Arguments]
-    F -- Too Many Arguments --> J[Error: function_name() takes X positional arguments but Y were given]
+    F -- Too Many Arguments --> J[Error: function_name takes X positional arguments but Y were given]
     G --> Z[End]
     H --> Z
     J --> Z
