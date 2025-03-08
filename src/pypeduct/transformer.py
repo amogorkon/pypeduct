@@ -1,3 +1,4 @@
+import inspect
 from ast import (
     AST,
     Assign,
@@ -6,16 +7,13 @@ from ast import (
     Call,
     Constant,
     FunctionDef,
-    GeneratorExp,
     Lambda,
-    List,
     Load,
     Name,
     NamedExpr,
     NodeTransformer,
     Return,
     RShift,
-    Set,
     Starred,
     Store,
     Tuple,
@@ -26,7 +24,7 @@ from ast import (
 from typing import Callable, NamedTuple, final, override
 
 from pypeduct.exceptions import PipeTransformError
-from pypeduct.helpers import ensure_loc, is_seq_ast, is_seq_runtime
+from pypeduct.helpers import ensure_loc, is_seq_ast, is_seq_runtime, resolve_attribute
 
 
 class FunctionParams(NamedTuple):
@@ -98,20 +96,19 @@ class PipeTransformer(NodeTransformer):
                 return self.generic_visit(node)
 
     def build_pipe_call(self, node: BinOp, left: expr, right: expr) -> Call:
-        def _is_ellipsis_placeholder(node):
+        def is_ellipsis(node):
             return isinstance(node, Constant) and node.value is Ellipsis
 
-        if isinstance(left, Constant) and left.value is Ellipsis:
+        if is_ellipsis(left):
             raise PipeTransformError(
                 "Why would you put a `...` on the left side of the pipe? 🤔"
             )
 
         match right:
-            # Handle placeholder usage.
             case Call(func, args, keywords) if (
                 placeholder_num := (
-                    sum(_is_ellipsis_placeholder(arg) for arg in args)
-                    + sum(_is_ellipsis_placeholder(kw.value) for kw in keywords)
+                    sum(map(is_ellipsis, args))
+                    + sum(is_ellipsis(kw.value) for kw in keywords)
                 )
             ) > 0:
                 if placeholder_num > 1:
@@ -121,21 +118,13 @@ class PipeTransformer(NodeTransformer):
                 self.print(
                     f"Placeholder case ({args}, {keywords}): {left} into {right}"
                 )
-                new_args = [
-                    left
-                    if (isinstance(arg, Constant) and arg.value is Ellipsis)
-                    else arg
-                    for arg in args
+                new_args = [left if is_ellipsis(arg) else arg for arg in args]
+                new_keywords = [
+                    keyword(kw.arg, left) if is_ellipsis(kw.value) else kw
+                    for kw in keywords
                 ]
-                new_keywords = []
-                for kw in keywords:
-                    if isinstance(kw.value, Constant) and kw.value.value is Ellipsis:
-                        new_keywords.append(keyword(arg=kw.arg, value=left))
-                    else:
-                        new_keywords.append(kw)
                 return ensure_loc(Call(func, new_args, new_keywords), node)
 
-            # Higher-order function (HOF) cases.
             case Call(Name(id=name), args, keywords) if name in self.hofs:
                 self.print(f"HOF case short name ({name} in hofs): {name}")
                 return ensure_loc(
@@ -159,46 +148,35 @@ class PipeTransformer(NodeTransformer):
                     node,
                 )
 
-            # Regular function call.
             case Call(func, args, keywords):
                 self.print(f"Regular case: {left} into {right}")
-                if self._should_unpack(func_node=func, left=left):
-                    new_args = [Starred(left, ctx=Load())] + args
-                else:
-                    new_args = [left] + args
+                unpack = self._should_unpack(func, left)
+                new_args = [Starred(left, Load())] + args if unpack else [left] + args
                 return ensure_loc(Call(func, new_args, keywords), node)
 
-            # Variadic case: when right is a Name and stored in function_params.
             case Name(id=name) if name in self.function_params:
                 self.print(f"Variadic case: {name=} in {self.function_params=}")
-                func_info = self.function_params[name]
-                # Use static metadata to decide.
                 unpack = (
-                    isinstance(left, (Tuple, List, Set, GeneratorExp))
-                    and func_info.num_pos > 1
-                    and not func_info.has_varargs
-                    and not self._has_sequence_annotation(func_info)
+                    isinstance(left, Tuple)
+                    and not self._has_sequence_annotation(right)
+                    and self.function_params[name].num_pos != 1
                 )
                 args = [Starred(left, ctx=Load())] if unpack else [left]
                 return ensure_loc(Call(right, args, []), node)
 
-            # Lambda: use lambda parameters.
             case Lambda(args=lambda_args):
-                self.print(f"Lambda case: {lambda_args=}")
                 num_pos = len(lambda_args.posonlyargs) + len(lambda_args.args)
-                has_varargs = lambda_args.vararg is not None
-                hint = lambda_args.args[0].annotation if lambda_args.args else None
-                unpack = (
-                    (not is_seq_ast(hint))
-                    if hint
-                    else (num_pos > 1 and not has_varargs)
+                has_seq_annot = self._has_sequence_annotation(right)
+                unpack = isinstance(left, Tuple) and not has_seq_annot and num_pos != 1
+                return ensure_loc(
+                    Call(right, [Starred(left, Load())] if unpack else [left], []), node
                 )
-                args = [Starred(left, ctx=Load())] if unpack else [left]
-                return ensure_loc(Call(right, args, []), node)
 
-            case _:
-                self.print(f"Fall-through case: {left} into {right}")
-                return ensure_loc(Call(right, [left], []), node)
+            case _:  # actually very common because it covers all the functions outside the decorated context
+                unpack = isinstance(left, Tuple) and not self._is_single_arg_func(right)
+                args = [Starred(left, Load())] if unpack else [left]
+                self.print(f"Fall-through case: {left} into {right}, {unpack=}")
+                return ensure_loc(Call(right, args, []), node)
 
     def process_body(self, body: list[stmt]) -> list[AST]:
         original_assignments = self.current_block_assignments
@@ -232,55 +210,17 @@ class PipeTransformer(NodeTransformer):
                 return len(lambda_args.posonlyargs) + len(lambda_args.args)
         return 1
 
-    def _has_sequence_annotation(self, func_info: FunctionParams) -> bool:
-        if not func_info.param_annotations:
-            return False
-        first_annotation = func_info.param_annotations[0]
-        return is_seq_ast(first_annotation) or is_seq_runtime(first_annotation)
-
     def _should_unpack(self, func_node: AST, left: expr) -> bool:
         """Decides if `left` should be unpacked when passed to `func_node`."""
-        # Avoid unpacking for atomic (non-sequence) constants.
         if isinstance(left, Constant) and isinstance(
             left.value, (str, bytes, int, float)
         ):
             return False
 
-        # Determine how many positional parameters (without defaults) the function requires.
-        req_params = self._get_required_params(func_node)
+        if self._is_single_arg_func(func_node):
+            return False
 
-        # Try to extract static metadata, if available.
-        func_info = None
-        match func_node:
-            case Name(id=name) if name in self.function_params:
-                func_info = self.function_params[name]
-            case _:
-                func_info = None
-
-        if func_info is not None:
-            has_seq_annot = self._has_sequence_annotation(func_info)
-        else:
-            # Fallback to lambda analyses.
-            if isinstance(func_node, Lambda) and func_node.args.args:
-                hint = func_node.args.args[0].annotation
-                has_seq_annot = is_seq_ast(hint) or is_seq_runtime(hint)
-            else:
-                has_seq_annot = False
-
-        # Decide whether to unpack:
-        # Only if left is a sequence literal (Tuple, List, or GeneratorExp), its number of elements exactly
-        # equals the number of required parameters, and the first parameter is not annotated as a sequence.
-        is_unpack_needed = (
-            isinstance(left, (Tuple, List, GeneratorExp))
-            and hasattr(left, "elts")
-            and (len(left.elts) == req_params)
-            and not has_seq_annot
-        )
-
-        self.print(
-            f"Checking unpack: {left} into {func_node} | Req params: {req_params} | Needs unpacking: {is_unpack_needed}"
-        )
-        return is_unpack_needed
+        return isinstance(left, Tuple)
 
     def _get_required_params(self, func_node: AST) -> int:
         """Count positional parameters without default values."""
@@ -291,3 +231,91 @@ class PipeTransformer(NodeTransformer):
             case Lambda(args=lambda_args):
                 return len(lambda_args.posonlyargs) + len(lambda_args.args)
         return 1
+
+    def _is_single_arg_func(self, func_node: AST) -> bool:
+        """Check if function expects exactly 1 positional argument."""
+        try:
+            if isinstance(func_node, Name):
+                if func_obj := self.current_globals.get(func_node.id):
+                    try:
+                        sig = inspect.signature(func_obj)
+                    except ValueError:
+                        # Built-in without signature - assume multi-arg
+                        return False
+                    params = list(sig.parameters.values())
+                    num_required = sum(
+                        p.default is inspect.Parameter.empty
+                        and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                        for p in params
+                    )
+                    return num_required == 1
+
+            elif isinstance(func_node, Attribute):
+                func = resolve_attribute(func_node, self.current_globals)
+                if not func:
+                    return False
+
+                try:
+                    sig = inspect.signature(func)
+                except ValueError:
+                    # Built-in without signature - assume multi-arg
+                    return False
+
+                params = list(sig.parameters.values())
+                num_required = sum(
+                    p.default is inspect.Parameter.empty
+                    and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                    for p in params
+                )
+                return num_required == 1
+
+        except Exception:
+            pass
+
+        return False
+
+    def _has_sequence_annotation(self, func_node: AST) -> bool:
+        """Check if first parameter expects a sequence using AST and runtime info."""
+        # Local functions (defined in decorated scope)
+        if isinstance(func_node, Name) and func_node.id in self.function_params:
+            func_info = self.function_params[func_node.id]
+            if not func_info.param_annotations:
+                return False
+            ann = func_info.param_annotations[0]
+            return is_seq_ast(ann) or is_seq_runtime(ann)
+
+        # Lambdas
+        if isinstance(func_node, Lambda) and func_node.args.args:
+            ann = func_node.args.args[0].annotation
+            return is_seq_ast(ann) or is_seq_runtime(ann)
+
+        # External functions (using resolve_attribute)
+        if isinstance(func_node, (Name, Attribute)):
+            func_obj = None
+            if isinstance(func_node, Name):
+                func_obj = self.current_globals.get(func_node.id)
+            elif isinstance(func_node, Attribute):
+                func_obj = resolve_attribute(func_node, self.current_globals)
+
+            if func_obj and hasattr(func_obj, "__annotations__"):
+                params = list(inspect.signature(func_obj).parameters.values())
+                # Skip self/cls for bound methods
+                offset = 1 if hasattr(func_obj, "__self__") else 0
+                if params[offset:]:
+                    ann_type = func_obj.__annotations__.get(params[offset].name)
+                    return is_seq_runtime(ann_type)
+
+        return False
+
+    def get_runtime_function(self, node: AST) -> Callable | None:
+        match node:
+            case Name(id=name) if name in self.current_globals:
+                return self.current_globals[name]
+
+            case Attribute(value=Constant(value=const_val), attr=attr):
+                # Resolve methods on literal constants like " ".join -> str.join
+                method = getattr(type(const_val), attr, None)
+                if method and callable(method):
+                    return method.__get__(const_val)
+
+        return None

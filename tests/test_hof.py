@@ -128,10 +128,18 @@ def test_placeholder_on_the_left():
 # =====================
 
 
-def test_hof_with_tuple_data():
+def test_hof_with_tuple_data_1():
     @pyped
     def tuple_with_hof():
-        return (1, 2, 3) >> zip([4, 5, 6]) >> list
+        return ((1, 2, 3),) >> zip([4, 5, 6]) >> list
+
+    assert tuple_with_hof() == [(1, 4), (2, 5), (3, 6)]
+
+
+def test_hof_with_tuple_data_2():
+    @pyped
+    def tuple_with_hof():
+        return (1, 2, 3) >> zip(..., [4, 5, 6]) >> list
 
     assert tuple_with_hof() == [(1, 4), (2, 5), (3, 6)]
 

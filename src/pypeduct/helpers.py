@@ -1,6 +1,7 @@
 import ast
-from ast import AST
+from ast import AST, Attribute, Name
 from collections.abc import Sequence
+import inspect
 from typing import Protocol, TypeVar, get_origin, runtime_checkable
 
 NODE = (
@@ -39,14 +40,18 @@ def resolve_attribute(attr_node: ast.Attribute, globals_dict: dict) -> object | 
     Avoids invoking callables (e.g., instantiating classes or calling functions)
     to prevent any side effects.
     """
-    if isinstance(attr_node.value, ast.Name):  # Simple case: global lookup
+    if isinstance(
+        attr_node.value, ast.Constant
+    ):  # Handle string literals, numbers, etc.
+        base = attr_node.value.value
+    elif isinstance(attr_node.value, ast.Name):  # Simple case: global lookup
         base = globals_dict.get(attr_node.value.id)
     elif isinstance(attr_node.value, ast.Attribute):  # Recursive case: obj.attr1.attr2
         base = resolve_attribute(attr_node.value, globals_dict)
     else:
         return None  # Cannot resolve function calls, indexing, etc.
 
-    return None if base is None else getattr(base, attr_node.attr, None)
+    return getattr(base, attr_node.attr, None) if base is not None else None
 
 
 def is_seq_ast(annotation: ast.AST) -> bool:
@@ -99,4 +104,47 @@ def should_unpack(annotation: ast.AST) -> bool:
         return True
     if isinstance(annotation, ast.Subscript):
         return is_seq_runtime(annotation.value)
+    return False
+
+
+def is_single_arg_func(func_node: AST, current_globals) -> bool:
+    """Check if function expects exactly 1 positional argument."""
+    try:
+        if isinstance(func_node, Name):
+            if func := current_globals.get(func_node.id):
+                try:
+                    sig = inspect.signature(func)
+                except ValueError:
+                    # Built-in without signature - assume multi-arg
+                    return False
+                params = list(sig.parameters.values())
+                num_required = sum(
+                    p.default is inspect.Parameter.empty
+                    and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                    for p in params
+                )
+                return num_required == 1
+
+        elif isinstance(func_node, Attribute):
+            func = resolve_attribute(func_node, current_globals)
+            if not func:
+                return False
+
+            try:
+                sig = inspect.signature(func)
+            except ValueError:
+                # Built-in without signature - assume multi-arg
+                return False
+
+            params = list(sig.parameters.values())
+            num_required = sum(
+                p.default is inspect.Parameter.empty
+                and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+                for p in params
+            )
+            return num_required == 1
+
+    except Exception:
+        pass
+
     return False

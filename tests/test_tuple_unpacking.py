@@ -121,41 +121,48 @@ def test_variadic_function():
 
 
 def test_variadic_function_single_value():
-    @pyped
     def collect_args(*args):
-        return args  # Should return a tuple of collected values
+        return args
 
-    result = (
-        42 >> collect_args
-    )  # Single value should still be treated as a tuple as the function is variadic
-    assert result == (42,), f"Expected (42,), got {result}"
+    @pyped
+    def test():
+        # Single value should still be treated as a tuple as the function is variadic
+        return 42 >> collect_args
+
+    assert test() == (42,)
 
 
 def test_variadic_function_with_keyword():
-    @pyped
     def multiply_and_sum(multiplier, *args, offset=0):
         return (multiplier * sum(args)) + offset  # Apply offset after multiplication
 
-    result = 2 >> multiply_and_sum(3, 4, 5, offset=10)
-    assert result == 34, f"Expected 34, got {result}"
-
-
-def test_variadic_function_with_default_keyword():
     @pyped
+    def test():
+        return 2 >> multiply_and_sum(3, 4, 5, offset=10)
+
+    assert test() == 34
+
+
+def test_variadic_function_with_default():
     def multiply_and_sum(multiplier, *args, offset=10):  # Default offset to 10
         return (multiplier * sum(args)) + offset
 
-    result = 2 >> multiply_and_sum(3, 4, 5)  # No explicit offset
-    assert result == 34, f"Expected 34, got {result}"
+    @pyped
+    def test():
+        return 2 >> multiply_and_sum(3, 4, 5)  # No explicit offset
+
+    assert test() == 34
 
 
 def test_variadic_function_empty_args_with_keyword():
-    @pyped
     def multiply_and_sum(multiplier, *args, offset=10):
         return (multiplier * (sum(args) if args else 1)) + offset  # Handle empty *args
 
-    result = 2 >> multiply_and_sum(offset=5)  # No extra arguments
-    assert result == 7, f"Expected 7, got {result}"
+    @pyped
+    def test():
+        return 2 >> multiply_and_sum(offset=5)  # No extra arguments
+
+    assert test() == 7
 
 
 # Callable class
