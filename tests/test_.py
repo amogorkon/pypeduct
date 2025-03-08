@@ -95,6 +95,17 @@ def test_basic_pipe():
     assert basic_pipe() == ["5"]
 
 
+def test_pipe_with_strings():
+    def add_parts(start="hello ", middle="world", end="!"):
+        return start + middle + end
+
+    @pyped
+    def test():
+        return ("cruel", "world") >> " ".join >> add_parts(middle=...)
+
+    assert test() == "hello cruel world!"
+
+
 def test_pipe_with_user_defined_function_reference():
     def increment_func(x):
         return x + 1
@@ -167,17 +178,6 @@ def test_placeholder_position():
         return 2 >> addd(1, ..., 3)
 
     assert pipeline() == 6
-
-
-def test_placeholder_keyword():
-    def addd(*, a, b=2, c=3):
-        return a + b + c
-
-    @pyped
-    def pipeline():
-        return 3 >> addd(a=1, b=...)
-
-    assert pipeline() == 7
 
 
 def test_rshift_operator():
