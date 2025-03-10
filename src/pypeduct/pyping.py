@@ -15,9 +15,9 @@ DEFAULT_HOF = {"filter": filter, "map": map, "reduce": reduce}
 
 def print_code(code, original=True):
     print(
-        f"----- Original Code ----- \n\n{code}\n----- End Original Code -----"
+        f"vvvvvvv Original Code vvvvvvv \n\n{code}\n^^^^^^^ End Original Code ^^^^^^^"
     ) if original else print(
-        f"----- Transformed Code ----- \n\n{code}\n\n----- End Transformed Code -----"
+        f"vvvvvvv Transformed Code vvvvvvv \n\n{code}\n\n^^^^^^^ End Transformed Code ^^^^^^^"
     )
 
 
@@ -38,10 +38,17 @@ def pyped(
             nonlocal transformed
 
             if transformed is None:
-                if inspect.isclass(obj):
-                    transformed = _transform_class(obj, verbose, hofs)
+                if not inspect.isclass(obj):
+                    transformed = _transform_function(
+                        obj, verbose, hofs, obj.__globals__.copy()
+                    )
                 else:
-                    transformed = _transform_function(obj, verbose, hofs)
+                    transformed = _transform_class(
+                        obj,
+                        verbose,
+                        hofs,
+                    )
+
             return transformed(*args, **kwargs)
 
         return wrapper  # type: ignore
@@ -50,7 +57,10 @@ def pyped(
 
 
 def _transform_function(
-    func: Callable, verbose: bool, hofs: dict[str, Callable]
+    func: Callable,
+    verbose: bool,
+    hofs: dict[str, Callable],
+    current_globals: dict[str, Any],
 ) -> Callable:
     """Performs the AST transformation using the original function's context."""
     try:
@@ -61,7 +71,7 @@ def _transform_function(
     if verbose:
         print_code(source, original=True)
 
-    tree = PipeTransformer(hofs, func.__globals__.copy(), verbose=verbose).visit(
+    tree = PipeTransformer(hofs, current_globals, verbose=verbose).visit(
         ast.parse(source)
     )
 
@@ -104,7 +114,12 @@ def _retrieve_source(func):
     return result.split(":", 1)[1]
 
 
-def _transform_class(cls: Type[Any], verbose: bool, hofs: set[Callable]) -> Type[Any]:
+def _transform_class(
+    cls: Type[Any],
+    verbose: bool,
+    hofs: set[Callable],
+    current_globals: dict[str, Any] = None,
+) -> Type[Any]:
     """Transforms a class by applying AST transformations to its methods, including nested classes."""
     try:
         source = inspect.getsource(cls)
