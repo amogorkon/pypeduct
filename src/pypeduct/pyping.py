@@ -15,9 +15,9 @@ DEFAULT_HOF = {"filter": filter, "map": map, "reduce": reduce}
 
 def print_code(code, original=True):
     print(
-        f"vvvvvvv Original Code vvvvvvv \n\n{code}\n^^^^^^^ End Original Code ^^^^^^^"
+        f"↓↓↓↓↓↓↓ Original Code ↓↓↓↓↓↓↓ \n\n{code}\n↑↑↑↑↑↑↑ End Original Code ↑↑↑↑↑↑↑"
     ) if original else print(
-        f"vvvvvvv Transformed Code vvvvvvv \n\n{code}\n\n^^^^^^^ End Transformed Code ^^^^^^^"
+        f"↓↓↓↓↓↓↓ Transformed Code ↓↓↓↓↓↓↓ \n\n{code}\n↓↓↓↓↓↓↓ End Transformed Code ↓↓↓↓↓↓↓"
     )
 
 
