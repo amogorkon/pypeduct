@@ -42,6 +42,16 @@ def test_builtin_function():
     assert compute_length()
 
 
+def test_pipe_with_complex_default_expression():
+    complex_default = [x * 2 for x in range(3)]
+
+    @pyped
+    def complex_default_expr_pipeline(x=complex_default):
+        return x >> (lambda val: val)
+
+    assert complex_default_expr_pipeline() == [0, 2, 4]
+
+
 def test_simple_diff():
     def diff(a, b):
         return a - b
@@ -913,3 +923,30 @@ def test_partial_application_pipeline():
         return x >> double
 
     assert partial_pipeline(5) == 10
+
+
+def test_pipe_with_default_argument_evaluation_time():
+    eval_count = 0
+
+    def default_value_func():
+        nonlocal eval_count
+        eval_count += 1
+        return eval_count
+
+    @pyped
+    def default_eval_time_pipeline(x=default_value_func()):
+        return x >> (lambda val: val)
+
+    assert default_eval_time_pipeline() == 1
+
+
+def test_pipe_with_mutable_default_argument():
+    @pyped
+    def mutable_default_arg_pipeline():
+        def func(val, mutable_list=[]):
+            mutable_list.append(val)
+            return val, mutable_list
+
+        return 1 >> func >> func >> (lambda val, lst: lst)
+
+    assert mutable_default_arg_pipeline() == [1, 1]

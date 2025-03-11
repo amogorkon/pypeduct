@@ -69,3 +69,11 @@ def test_pipe_with_generator_comprehension():
         return (x * 2 for x in range(3)) >> (lambda gen: sum(gen))
 
     assert generator_comprehension_pipeline() == 6
+
+
+def test_generator_expression_pipeline():
+    @pyped
+    def named_expression_generator_pipeline():
+        return sum(i >> (lambda x: x * 2) for i in range(3))
+
+    assert named_expression_generator_pipeline() == 6

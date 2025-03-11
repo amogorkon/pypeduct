@@ -127,7 +127,7 @@ def test_pipe_with_recursion_error_handling():
 
     @pyped
     def recursion_error_pipeline():
-        return 0 >> recursive_func  # Deep recursion - should raise RecursionError
+        return 0 >> recursive_func
 
     with pytest.raises(RecursionError):
         recursion_error_pipeline()
@@ -242,3 +242,14 @@ def invalid_syntax():
 """
     with pytest.raises(SyntaxError):
         exec(faulty_code, globals())
+
+
+def test_pipe_with_recursive_lambda():
+    @pyped
+    def recursive_lambda_pipeline(n):
+        fact = lambda f: lambda x: f(f)(x) if x else 1
+        factorial = fact(fact)
+        return n >> factorial
+
+    with pytest.raises(RecursionError):
+        recursive_lambda_pipeline(5)

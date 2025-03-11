@@ -410,3 +410,47 @@ def test_pipe_with_lambda_returning_lambda():
         )
 
     assert lambda_lambda_return_pipeline(5) == 6
+
+
+def test_pipe_with_lambda_returning_nested_function():
+    def outer_func(y):
+        def inner_func(x):
+            return x + y
+
+        return inner_func
+
+    increment_func = outer_func(1)
+
+    @pyped
+    def lambda_nested_func_return_pipeline(x):
+        return x >> (val := increment_func) >> (lambda x: outer_func(val)(x))
+
+    assert lambda_nested_func_return_pipeline(5) == 12, "val = (5 + 1); val + val = 12"
+
+
+def test_pipe_with_lambda_returning_zip_object():
+    @pyped
+    def lambda_zip_return_pipeline():
+        return 5 >> (lambda val: zip(range(val), range(val, val + 3))) >> list
+
+    assert lambda_zip_return_pipeline() == [(0, 5), (1, 6), (2, 7)]
+
+
+def test_pipe_with_lambda_argument_shadowing():
+    factor = 10
+
+    @pyped
+    def lambda_arg_shadowing_pipeline(x):
+        return x >> (lambda val, factor: val * factor)(2)
+
+    # Lambda arg shadowing test, lambda factor (2) should be used, 5 * 2 = 10
+    assert lambda_arg_shadowing_pipeline(5) == 10
+
+def test_pipe_y_combinator():
+    @pyped
+    def recursive_lambda_pipeline(n):
+        fact = lambda f: lambda x: x * f(f)(x - 1) if x > 0 else 1
+        factorial = fact(fact)
+        return n >> factorial
+
+    assert recursive_lambda_pipeline(5) == 120
