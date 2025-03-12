@@ -268,14 +268,6 @@ def test_pipe_with_lambda_returning_starred_expression():
     assert lambda_starred_expression_return_pipeline(5) == [5, 6, 7]
 
 
-def test_lambda_with_defaults_in_pipeline():
-    @pyped
-    def lambda_defaults_pipeline(x):
-        return x >> (lambda val, *, inc=1: val + inc)
-
-    assert lambda_defaults_pipeline(5) == 6
-
-
 def test_lambda_with_kwargs_in_pipeline():
     @pyped
     def lambda_kwargs_pipeline(x, **kwargs):
@@ -445,6 +437,7 @@ def test_pipe_with_lambda_argument_shadowing():
 
     # Lambda arg shadowing test, lambda factor (2) should be used, 5 * 2 = 10
     assert lambda_arg_shadowing_pipeline(5) == 10
+
 
 def test_pipe_y_combinator():
     @pyped

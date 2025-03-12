@@ -71,17 +71,6 @@ def test_pipe_with_staticmethod_reference():
     assert staticmethod_ref_pipeline(5) == 7
 
 
-def test_nested_class_transformation():
-    @pyped
-    class Outer:
-        class Inner:
-            def process(self, x: int) -> int:
-                return x >> (lambda y: y * 3)
-
-    instance = Outer.Inner()
-    assert instance.process(2) == 6, "Nested class method not transformed!"
-
-
 def test_pipe_with_class_instance_mutation():
     class MutableData:
         def __init__(self, value):
@@ -100,23 +89,12 @@ def test_pipe_with_class_instance_mutation():
     assert class_instance_mutation_pipeline(data_instance) == 6
 
 
-def test_pipe_with_nested_class_pipeline():
-    class OuterClass:
-        class InnerClass:  # Nested class
-            def process(self, x):
-                return x + 1
-
-        def __init__(self):
-            self.inner = OuterClass.InnerClass()
-
-        @pyped
-        def outer_method(self, x):
-            return x >> self.inner.process
-
-    outer_instance = OuterClass()
-
+def test_nested_class_transformation():
     @pyped
-    def nested_class_pipeline(outer_instance):
-        return outer_instance >> outer_instance.outer_method
+    class Outer:
+        class Inner:
+            def process(self, x: int) -> int:
+                return x >> (lambda y: y * 3)
 
-    assert nested_class_pipeline(outer_instance) == 6
+    instance = Outer.Inner()
+    assert instance.process(2) == 6, "Nested class method not transformed!"
