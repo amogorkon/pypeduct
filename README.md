@@ -97,7 +97,7 @@ Decorating a Class decorates all methods of the class. This is useful for classe
 Nested classes are supported. The decorator is applied to all methods of the class, including nested inner classes. This is useful for classes that are used as a pipeline, where all methods are supposed to be pipeline stages.
 
 ## Documentation
-Check out our https://github.com/amogorkon/pypeduct/blob/main/docs/showcase.ipynb, our(Pypeduct Pipeline Tuple Unpacking Specification at https://github.com/amogorkon/pypeduct/blob/main/docs/argument_unpacking_spec.md or the Howto https://github.com/amogorkon/pypeduct/blob/main/docs/howto.md and the over 350 test cases with more advanced examples!
+Check out our https://github.com/amogorkon/pypeduct/blob/main/docs/showcase.ipynb, our Pypeduct Pipeline Tuple Unpacking Specification at https://github.com/amogorkon/pypeduct/blob/main/docs/argument_unpacking_spec.md or the Howto https://github.com/amogorkon/pypeduct/blob/main/docs/howto.md and the over 350 test cases with more advanced examples!
 
 Please report any inconsistencies or ideas for better examples or tests, it'll be greatly appreciated! 
 
