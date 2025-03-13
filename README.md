@@ -1,16 +1,20 @@
 # pypeduct
 
-pypeduct is a Python library for pipe transformations, inspired by Elixir-style pipelines.
+PypeDuct is a Python 3 library for creating elegant and readable data processing pipelines, heavily inspired by the pipeline operator found in Elixir and Robin Hilliard's genius https://github.com/robinhilliard/pipes. It empowers you to chain operations together in a clear and sequential manner using the right-shift operator (`>>`), removing the need for nested function calls, substantially improving code readability and maintainability.
 
 ## Features
 
-- Transform functions and methods into pipelines
-- Support for various Python constructs including lambdas, comprehensions, and more
-- Exception handling within pipelines
+- **Pipeline Transformation:** Enables the transformation of functions and methods into seamless pipeline operations using the `>>` operator, which can also be used in a line-by-line manner as a "data processing tower".
+- **Versatile Support:** Supports a wide range of Python constructs within pipelines, including regular functions, lambda expressions, classes and more.
+- **Intermediate Value Capture:** Facilitates capturing intermediate results within pipelines using the walrus operator (`:=`).
+- **Argument Placeholder:** Offers the ellipsis (`...`) as a flexible placeholder for argument insertion in pipeline stages.
+- **Tuple Unpacking:** Provides intelligent tuple unpacking into function arguments by default, with an option to override using the placeholder.
+- **Higher-Order Function Integration:** Seamlessly integrates with built-in higher-order functions like `map`, `filter`, and `reduce`, as well as custom higher-order functions.
+- **Partial Function Application:** Partial function application within pipelines for more flexible and reusable code by default.
 
 ## Installation
 
-To install pypeduct, use pip:
+To install pypeduct, simply use pip:
 
 ```sh
 pip install pypeduct
@@ -35,11 +39,12 @@ result = 5 | add_one | multiply_by_two
 print(result)  # Output: 12
 ```
 
-## MAGIC
+## Features and Magic
 
 ### Walrus Operator
 
-The walrus operator (`:=`) is used to assign values to variables as part of an expression. This can be particularly useful in pipelines to capture intermediate results.
+The walrus operator (`:=`) is used to assign intermediate results to variables as part of an expression. This can be particularly useful in pipelines to capture intermediate results. It differs from the regular behaviour in that it doesn't assign the current right-hand-side (=function) to the variable, but rather the return value of the function after it has been executed.
+This can be a little confusing at first, but it's very powerful to capture intermediate results in a pipeline.
 
 Example:
 
@@ -64,25 +69,15 @@ def example_pipeline(x):
 print(example_pipeline(3))  # Output: (60.0, 11)
 ```
 
-### Ellipsis (`...`) as Placeholder
-
-The ellipsis (`...`) can be used as a placeholder in function definitions or pipelines. This allows for more flexible and readable code.
-
-Example:
-
-```python
-from pypeduct import pyped
-
-@pyped
-def example_pipeline(x):
-    return x >> (lambda y: y + 1) >> ... >> (lambda z: z * 2)
-
-print(example_pipeline(3))  # Output: 8
-```
-
 ### Partial Function Application
+Inside a pipeline, calls on the right hand side of the operator can be thought of as partial application. This means that the function call is "prepared" with the given arguments and the function then is finally called with the data that is piped into it. This is different from functools.partial in so far that there is no different (partial) function object created, but the arguments are assembled on the AST - the data from the left, the other arguments from the right. `data >> func(3)` is equivalent to `func(data, 3)`. This also works for methods and class instantiation, for positional and keyword arguments.
 
-In pypeduct, using `func(3)` inside a pipeline is considered a partial application. This means that the function is partially applied with the given arguments and can be used in the pipeline.
+### Tuple Unpacking
+Within a pipeline, tuples are automatically unpacked into function arguments. This means that `x,y >> lambda x,y: x+y` works as expected. This is the default behaviour and works with lambdas, functions, methods and classes. This is the default behaviour, but it can be overridden by using the ellipsis (`...`) as placeholder.
+
+### Ellipsis (`...`) as Argument Position Indicator - Placeholder
+
+The ellipsis (`...`) can be used as a placeholder in function definitions or pipelines. This allows for more flexible and readable code. This works for positional and keyword arguments.
 
 Example:
 
@@ -90,19 +85,24 @@ Example:
 from pypeduct import pyped
 
 @pyped
-def example_pipeline(x):
-    def add(a, b):
-        return a + b
+def pipeline(val):
+    return val >> (lambda x, y: x - y)(2, ...)
 
-    return x >> add(3)
+print(pipeline(3))  # Output: -1
 
-print(example_pipeline(2))  # Output: 5
-```
+### Classes
+Decorating a Class decorates all methods of the class. This is useful for classes that are used as a pipeline, where all methods are supposed to be pipeline stages. Inheritance is not supported. This is not a bug, but a feature, as it would lead to confusion and unexpected behaviour if a user subclasses a decorated class and tried to use the >> operator without knowing that the parent class was decorated.
+
+Nested classes are supported. The decorator is applied to all methods of the class, including nested inner classes. This is useful for classes that are used as a pipeline, where all methods are supposed to be pipeline stages.
+
+
 
 ## Contributing
-
 Contributions are welcome! Please open an issue or submit a pull request on GitHub.
 
 ## License
-
 This project is licensed under the MIT License. See the LICENSE file for details.
+
+
+## Office Hours
+You can contact me one-on-one! Check my [office hours](https://calendly.com/amogorkon/officehours) to set up a meeting :-)
