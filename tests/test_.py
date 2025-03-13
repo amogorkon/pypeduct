@@ -42,6 +42,17 @@ def test_builtin_function():
     assert compute_length()
 
 
+def test_walrus_hof():  # sourcery skip: simplify-empty-collection-comparison
+    @pyped
+    def test():
+        X = [1, 2, 3] >> (ret := map(str)) >> " ".join
+        # if you think list(ret) == ["1", "2", "3"] WRONG! ret is consumed by join, so ret is empty => []
+        assert list(ret) == []
+        return X
+
+    assert test() == "1 2 3"
+
+
 def test_pipe_with_complex_default_expression():
     complex_default = [x * 2 for x in range(3)]
 
