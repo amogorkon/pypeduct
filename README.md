@@ -99,6 +99,8 @@ Nested classes are supported. The decorator is applied to all methods of the cla
 ## Documentation
 Check out our https://github.com/amogorkon/pypeduct/blob/main/docs/showcase.ipynb, our(Pypeduct Pipeline Tuple Unpacking Specification at https://github.com/amogorkon/pypeduct/blob/main/docs/argument_unpacking_spec.md or the Howto https://github.com/amogorkon/pypeduct/blob/main/docs/howto.md and the over 350 test cases with more advanced examples!
 
+Please report any inconsistencies or ideas for better examples or tests, it'll be greatly appreciated! 
+
 ## Contributing
 Contributions are welcome! Please open an issue or submit a pull request on GitHub.
 
