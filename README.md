@@ -39,7 +39,7 @@ def pipeline(x):
 print(pipeline(5))  # Output: 12
 ```
 
-## Features and Magic
+## Magic!
 
 ### Walrus Operator
 
@@ -89,13 +89,15 @@ def pipeline(val):
     return val >> (lambda x, y: x - y)(2, ...)
 
 print(pipeline(3))  # Output: -1
+```
 
 ### Classes
 Decorating a Class decorates all methods of the class. This is useful for classes that are used as a pipeline, where all methods are supposed to be pipeline stages. Inheritance is not supported. This is not a bug, but a feature, as it would lead to confusion and unexpected behaviour if a user subclasses a decorated class and tried to use the >> operator without knowing that the parent class was decorated.
 
 Nested classes are supported. The decorator is applied to all methods of the class, including nested inner classes. This is useful for classes that are used as a pipeline, where all methods are supposed to be pipeline stages.
 
-
+## Documentation
+Check out our https://github.com/amogorkon/pypeduct/blob/main/docs/showcase.ipynb, our(Pypeduct Pipeline Tuple Unpacking Specification at https://github.com/amogorkon/pypeduct/blob/main/docs/argument_unpacking_spec.md or the Howto https://github.com/amogorkon/pypeduct/blob/main/docs/howto.md and the over 350 test cases with more advanced examples!
 
 ## Contributing
 Contributions are welcome! Please open an issue or submit a pull request on GitHub.
