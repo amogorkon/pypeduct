@@ -27,16 +27,16 @@ Here's a basic example of how to use pypeduct:
 ```python
 from pypeduct import pipe
 
-@pipe
 def add_one(x):
     return x + 1
 
-@pipe
 def multiply_by_two(x):
     return x * 2
+@pyped
+def pipeline(x):
+    return x >> add_one >> multiply_by_two
 
-result = 5 | add_one | multiply_by_two
-print(result)  # Output: 12
+print(pipeline(5))  # Output: 12
 ```
 
 ## Features and Magic
