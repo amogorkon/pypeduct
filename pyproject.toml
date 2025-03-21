@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pypeduct"
-version = "0.1.1"
+version = "0.9.1"
 description = "A project for pipe transformations, elixir-style. "
 authors = [
     { name = "Anselm Kiefner", email = "pypeduct-github@anselm.kiefner.de" }
