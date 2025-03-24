@@ -16,7 +16,10 @@ Pypeduct's tuple unpacking is governed by the following principles:
 
 ## 3. Unpacking Decision Logic
 
-The decision to unpack or not unpack a sequence passed via a pipeline is determined by the number of arguments, then the type annotation of the **first positional argument** of the function on the right side of the pipe (`>>`) **unless the argument position placeholder (`...`) is used.**
+Only if the LHS is a tuple, we will attempt to unpack it. If the LHS is not a tuple, we will pass it as-is. We only check the number of arguments in the RHS function, and if it is a single argument, we will pass the LHS as-is. If the RHS function has more than one argument, we will attempt to unpack the LHS tuple.
+This is done to avoid the ambiguity of whether the user wants to pass a tuple as a single argument or unpack it.
+
+The following flowchart illustrates the logic:
 
 ```mermaid
 graph LR
@@ -95,20 +98,22 @@ def add(a, b):
 
 (3, 4) >> add  # -> add(3, 4)
 
-# Function defined with def (non-sequence annotations)
+# Function defined with def
 def multiply_strings(text: str, count: int):
     return text * count
 
 ("hello", 3) >> multiply_strings  # -> multiply_strings("hello", 3)
 
 
-# Function annotated as list
-def process_sequence(items: list[int]):
-    return len(items)
+# List is passed as-is
+[1, 2, 3] >> sum  # -> sum([1, 2, 3])
 
-[10, 20, 30] >> process_sequence  # -> process_sequence([10, 20, 30])
+def process_sequence(items: list[int], factor=1):
+    return len(items) + factor
 
-# Function annotated as list of tuples
+[10, 20, 30] >> process_sequence  # -> process_sequence([10, 20, 30]) -> 4
+
+# List of tuples
 def handle_coordinates(points: list[tuple[int, int]], factor=1):
     return [sum(p*factor) for p in points]
 
@@ -197,4 +202,4 @@ def combine(a, b, c):
 
 ## 4. Conclusion
 
-This specification comprehensively defines sequence unpacking and argument insertion in pypeduct pipelines. The argument position placeholder (`...`) provides explicit control and disables the unpacking, offering users maximum flexibility in constructing their data processing pipelines.
+This specification comprehensively defines tuple unpacking and argument insertion in pypeduct pipelines. The argument position placeholder (`...`) provides explicit control and disables the unpacking, offering users maximum flexibility in constructing their data processing pipelines.
