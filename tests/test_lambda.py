@@ -3,6 +3,14 @@ from __future__ import annotations
 from pypeduct import pyped
 
 
+def test_simple_pipeline():
+    @pyped
+    def simple_pipeline(x: int) -> int:
+        return x >> (lambda y: y + 1)
+
+    assert simple_pipeline(2) == 3
+
+
 def test_pipe_with_lambda_returning_tuple():
     @pyped
     def lambda_tuple_return_pipeline(x):

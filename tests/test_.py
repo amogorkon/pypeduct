@@ -961,3 +961,48 @@ def test_pipe_with_mutable_default_argument():
         return 1 >> func >> func >> (lambda val, lst: lst)
 
     assert mutable_default_arg_pipeline() == [1, 1]
+
+
+def test_namedtuple_lambda_unpacking():
+    from collections import namedtuple
+
+    Point = namedtuple("Point", ["x", "y"])
+
+    @pyped
+    def namedtuple_unpacking_pipeline():
+        point = Point(3, 4)
+        return point >> (lambda x, y: x + y)
+
+    assert namedtuple_unpacking_pipeline() == 7
+
+
+def test_namedtuple_inner_def_unpacking():
+    from collections import namedtuple
+
+    Point = namedtuple("Point", ["x", "y"])
+
+    @pyped
+    def namedtuple_unpacking_pipeline():
+        def add(x, y):
+            return x + y
+
+        point = Point(3, 4)
+        return point >> add
+
+    assert namedtuple_unpacking_pipeline() == 7
+
+
+def test_namedtuple_outer_def_unpacking():
+    from collections import namedtuple
+
+    Point = namedtuple("Point", ["x", "y"])
+
+    def add(x, y):
+        return x + y
+
+    @pyped
+    def namedtuple_unpacking_pipeline():
+        point = Point(3, 4)
+        return point >> add
+
+    assert namedtuple_unpacking_pipeline() == 7

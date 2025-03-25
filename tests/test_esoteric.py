@@ -179,3 +179,24 @@ def test_pipe_with_loop_variable_capture():
         return pipeline
 
     assert loop_variable_capture_pipeline() == 6
+
+
+def test_class_in_function():
+    @pyped
+    def outer_function():
+        class Inner:
+            def __init__(self, value):
+                self.value = value
+
+            def operate(self, x):
+                return x + self.value
+
+            def test(self):
+                return 3 >> self.operate >> self.operate
+
+        return Inner(5)
+
+    instance = outer_function()
+    result = instance.test()
+
+    assert result == 13
