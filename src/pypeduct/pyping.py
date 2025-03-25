@@ -17,7 +17,7 @@ def print_code(code, original=True):
     print(
         f"↓↓↓↓↓↓↓ Original Code ↓↓↓↓↓↓↓ \n\n{code}\n↑↑↑↑↑↑↑ End Original Code ↑↑↑↑↑↑↑"
     ) if original else print(
-        f"↓↓↓↓↓↓↓ Transformed Code ↓↓↓↓↓↓↓ \n\n{code}\n↓↓↓↓↓↓↓ End Transformed Code ↓↓↓↓↓↓↓"
+        f"↓↓↓↓↓↓↓ Transformed Code ↓↓↓↓↓↓↓ \n\n{code}\n↑↑↑↑↑↑↑ End Transformed Code ↑↑↑↑↑↑↑"
     )
 
 
@@ -30,24 +30,23 @@ def pyped(
     """Decorator transforming the >> operator into pipeline operations."""
 
     def actual_decorator(obj: T) -> T:
-        transformed = None
         hofs = DEFAULT_HOF | (add_hofs or {})
+
+        if inspect.isclass(obj):
+            module = sys.modules.get(obj.__module__)
+            current_globals = module.__dict__ if module else {}
+            return _transform_class(obj, verbose, hofs, current_globals)
+
+        transformed = None
 
         @wraps(obj)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             nonlocal transformed
 
             if transformed is None:
-                if not inspect.isclass(obj):
-                    transformed = _transform_function(
-                        obj, verbose, hofs, obj.__globals__.copy()
-                    )
-                else:
-                    transformed = _transform_class(
-                        obj,
-                        verbose,
-                        hofs,
-                    )
+                transformed = _transform_function(
+                    obj, verbose, hofs, obj.__globals__.copy()
+                )
 
             return transformed(*args, **kwargs)
 
@@ -66,14 +65,29 @@ def _transform_function(
     try:
         source = inspect.getsource(func)
     except OSError:
-        source = _retrieve_source(func)
+        source = _retrieve_function_source(func)
     source = dedent(source)
     if verbose:
         print_code(source, original=True)
 
-    tree = PipeTransformer(hofs, current_globals, verbose=verbose).visit(
-        ast.parse(source)
-    )
+    tree = ast.parse(source)
+
+    if func.__defaults__:
+        top_level_node = tree.body[0]
+        if isinstance(top_level_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            new_defaults = []
+            for default in func.__defaults__:
+                try:
+                    default_repr = repr(default)
+                    parsed_node = ast.parse(default_repr, mode="eval").body
+                    new_defaults.append(parsed_node)
+                except SyntaxError:
+                    original_index = len(new_defaults)
+                    original_node = top_level_node.args.defaults[original_index]
+                    new_defaults.append(original_node)
+            top_level_node.args.defaults = new_defaults
+
+    tree = PipeTransformer(hofs, current_globals, verbose=verbose).visit(tree)
 
     top_level_node = tree.body[0]
     if isinstance(
@@ -86,108 +100,130 @@ def _transform_function(
     if verbose:
         print_code(ast.unparse(tree), original=False)
 
-    ctx = func.__globals__.copy()
-    closure = func.__closure__
-    if closure is not None:
+    if closure := func.__closure__:
         free_vars = func.__code__.co_freevars
         for name, cell in zip(free_vars, closure):
-            ctx[name] = cell.cell_contents
+            current_globals[name] = cell.cell_contents
 
-    exec(compile(tree, filename="<pyped>", mode="exec"), ctx)  # type: ignore
-    return ctx[func.__name__]
+    exec(compile(tree, filename="<pyped>", mode="exec"), current_globals)  # type: ignore
+    new_func = current_globals[func.__name__]
+
+    if func.__defaults__ is not None:
+        new_func.__defaults__ = func.__defaults__
+    if func.__kwdefaults__ is not None:
+        new_func.__kwdefaults__ = func.__kwdefaults__
+    return new_func
 
 
-def _retrieve_source(func):
+def _retrieve_function_source(func: Callable) -> str:
+    """Retrieves source code for functions where inspect.getsource fails."""
     code = func.__code__
     lines = linecache.getlines(code.co_filename)
 
+    # Find the correct AST node
     module_ast = ast.parse("".join(lines), code.co_filename)
-    target = next(
-        node
-        for node in ast.walk(module_ast)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == func.__name__
-        and node.lineno <= code.co_firstlineno <= node.end_lineno
-    )
+    for node in ast.walk(module_ast):
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == func.__name__
+            and node.lineno <= code.co_firstlineno <= node.end_lineno
+        ):
+            return "".join(lines[node.lineno - 1 : node.end_lineno])
 
-    result = "".join(lines[target.lineno - 1 : target.end_lineno])
-    return result.split(":", 1)[1]
+    raise OSError(f"Could not retrieve source for {func.__name__}")
 
 
 def _transform_class(
     cls: Type[Any],
     verbose: bool,
-    hofs: set[Callable],
-    current_globals: dict[str, Any] = None,
+    hofs: dict[str, Callable],
+    current_globals: dict[str, Any],
 ) -> Type[Any]:
-    """Transforms a class by applying AST transformations to its methods, including nested classes."""
+    """Transforms a class by applying AST transformations to its methods and nested classes."""
     try:
         source = inspect.getsource(cls)
     except OSError as e:
-        # Fallback using AST to find class boundaries
-        module_name = cls.__module__
-        module = sys.modules.get(module_name)
-
-        if not module or not getattr(module, "__file__", None):
-            raise OSError(f"Could not retrieve source code for {cls.__name__}") from e
-
-        module_file = module.__file__
-        lines = linecache.getlines(module_file)
-        module_ast = ast.parse("".join(lines), filename=module_file)
-
-        # Recursively search for the class node
-        class_nodes = []
-
-        class Visitor(ast.NodeVisitor):
-            def visit_ClassDef(self, node):
-                if node.name == cls.__name__:
-                    class_nodes.append(node)
-                self.generic_visit(node)
-
-        Visitor().visit(module_ast)
-
-        if not class_nodes:
-            raise OSError(
-                f"Class {cls.__name__} not found in module {module_name}"
-            ) from e
-
-        class_node = class_nodes[0]
-        start_line = class_node.lineno - 1  # 0-based
-        end_line = class_node.end_lineno
-        source = "".join(lines[start_line:end_line])
+        source = _retrieve_class_source(cls, e)
 
     source = dedent(source)
-
     if verbose:
         print_code(source, original=True)
 
     tree = ast.parse(source)
-    transformer = PipeTransformer(hofs, verbose=verbose)
+    transformer = PipeTransformer(hofs, current_globals, verbose)
     transformed_tree = transformer.visit(tree)
 
-    top_level_node = transformed_tree.body[0]
-    if isinstance(top_level_node, ast.ClassDef):
-        top_level_node.decorator_list = []
+    # Remove @pyped decorator while preserving others
+    class_node = transformed_tree.body[0]
+    if isinstance(class_node, ast.ClassDef):
+        class_node.decorator_list = [
+            dec for dec in class_node.decorator_list if not is_pyped_decorator(dec)
+        ]
+
     ast.fix_missing_locations(transformed_tree)
 
     if verbose:
-        print_code(ast.unparse(tree), original=False)
+        print_code(ast.unparse(transformed_tree), original=False)
 
-    if caller_frame := inspect.currentframe():
-        caller_frame = caller_frame.f_back.f_back
-        caller_globals = caller_frame.f_globals if caller_frame else {}
-        caller_locals = caller_frame.f_locals if caller_frame else {}
+    exec_globals = get_full_exec_context(cls, current_globals)
+    exec(compile(transformed_tree, filename="<pyped>", mode="exec"), exec_globals)
+    return exec_globals[cls.__name__]
+
+
+def _retrieve_class_source(cls: Type[Any], original_error: Exception) -> str:
+    """Retrieves class source code from module file."""
+    module = sys.modules.get(cls.__module__)
+    if not module or not getattr(module, "__file__", None):
+        raise OSError(
+            f"Could not retrieve source code for {cls.__name__}"
+        ) from original_error
+
+    lines = linecache.getlines(module.__file__)
+    class_node = _find_class_ast_node(module.__file__, lines, cls.__name__)
+    return "".join(lines[class_node.lineno - 1 : class_node.end_lineno])
+
+
+def is_pyped_decorator(node: ast.expr) -> bool:
+    """Identifies @pyped decorator in AST nodes."""
+    match node:
+        case ast.Name(id="pyped"):
+            return True
+        case ast.Call(func=ast.Name(id="pyped")):
+            return True
+    return False
+
+
+def _find_class_ast_node(
+    filename: str, lines: list[str], class_name: str
+) -> ast.ClassDef:
+    module_ast = ast.parse("".join(lines), filename)
+    if class_nodes := [
+        node
+        for node in ast.walk(module_ast)
+        if isinstance(node, ast.ClassDef) and node.name == class_name
+    ]:
+        return (
+            max(
+                class_nodes,
+                key=lambda n: n.lineno,  # Pick last definition
+            )
+            if len(class_nodes) > 1
+            else class_nodes[0]
+        )
     else:
-        caller_globals = {}
-        caller_locals = {}
+        raise OSError(f"Class {class_name} not found in module {filename}")
 
-    exec_globals = {**caller_globals, **caller_locals}
-    exec_locals = {}
 
-    exec(
-        compile(transformed_tree, filename="<pyped>", mode="exec"),
-        exec_globals,
-        exec_locals,
-    )
+def get_full_exec_context(cls, current_globals: dict[str, Any]) -> dict[str, Any]:
+    """
+    Traverses the entire call stack to accumulate a union of all globals and locals,
+    ensuring that any decorator (or other local dependency) is present.
 
-    return exec_locals[cls.__name__]
+    This is extremely costly (factor 1000).
+    If this is only done once on startup it may be acceptable, but we need to make sure this is the case.
+    """
+    module = sys.modules.get(cls.__module__)
+    context = {**(module.__dict__ if module else {}), **current_globals}
+    for frame_info in inspect.stack():
+        context |= frame_info.frame.f_globals | frame_info.frame.f_locals
+    return context
