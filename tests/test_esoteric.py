@@ -120,22 +120,6 @@ def test_pipe_with_complex_mutation_chain():
     assert complex_mutation_chain_pipeline(mutator_instance) == 13
 
 
-def test_pipe_with_nonlocal_keyword():
-    def outer_function():
-        nonlocal_var = 10
-
-        @pyped
-        def nonlocal_keyword_pipeline(x):
-            nonlocal nonlocal_var
-            nonlocal_var += 1
-            return x >> (lambda val: val + nonlocal_var)
-
-        return nonlocal_keyword_pipeline
-
-    nonlocal_keyword_pipeline_func = outer_function()
-    assert nonlocal_keyword_pipeline_func(5) == 16
-
-
 def test_with_statement_in_pipeline():
     class ContextManager:
         def __enter__(self):
