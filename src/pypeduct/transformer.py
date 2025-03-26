@@ -1,22 +1,23 @@
-import inspect
+# transformer.py
 from ast import (
     AST,
     Assign,
+    AsyncFunctionDef,
     Attribute,
     BinOp,
     Call,
     Constant,
     FunctionDef,
+    Global,
     Lambda,
     Load,
     Name,
     NamedExpr,
     NodeTransformer,
+    Nonlocal,
     Return,
     RShift,
-    Starred,
     Store,
-    Tuple,
     expr,
     keyword,
     stmt,
@@ -26,30 +27,27 @@ from typing import Callable, NamedTuple, final, override
 from pypeduct.exceptions import PipeTransformError
 from pypeduct.helpers import (
     ensure_loc,
-    has_sequence_annotation,
-    is_single_arg_func,
-    resolve_attribute,
-    should_unpack,
+    get_num_required_args,
+    inject_unpack_helper,
 )
 
 
 class FunctionParams(NamedTuple):
+    num_required: int
     num_pos: int
-    has_varargs: bool
-    param_annotations: list[AST | None]
-    defaults_count: int
 
 
 @final
 class PipeTransformer(NodeTransformer):
-    def __init__(
-        self, hofs: dict[str, Callable], current_globals=None, verbose=False
-    ) -> None:
+    def __init__(self, hofs: dict[str, Callable], context=None, verbose=False) -> None:
+        super().__init__()
         self.verbose = verbose
         self.current_block_assignments: list[Assign] = []
         self.function_params: dict[str, FunctionParams] = {}
         self.hofs = hofs
-        self.current_globals = current_globals or {}
+        self.context = context or {}
+        self.processing_function = False
+        self.current_function_level = 0
 
     def process_body(self, body: list[stmt]) -> list[AST]:
         original_assignments = self.current_block_assignments
@@ -70,19 +68,50 @@ class PipeTransformer(NodeTransformer):
     @override
     def visit(self, node: AST) -> AST | list[AST] | None:
         match node:
-            case FunctionDef(name, args, body, decorator_list):
-                self.function_params[name] = FunctionParams(
-                    num_pos=len(args.posonlyargs) + len(args.args),
-                    has_varargs=args.vararg is not None,
-                    param_annotations=[
-                        arg.annotation for arg in args.posonlyargs + args.args
-                    ],
-                    defaults_count=len(args.defaults) if args.defaults else 0,
-                )
-                processed_body = self.process_body(body)
+            case FunctionDef(name, args, body, decorator_list) | AsyncFunctionDef(
+                name, args, body, decorator_list
+            ):
+                original_level = self.current_function_level
+                self.current_function_level += 1
+
+                try:
+                    if self.current_function_level == 1:
+                        self.function_params[name] = FunctionParams(
+                            num_required=max(
+                                0,
+                                (
+                                    len(args.posonlyargs)
+                                    + len(args.args)
+                                    - len(args.defaults)
+                                ),
+                            ),
+                            num_pos=len(args.posonlyargs) + len(args.args),
+                        )
+
+                    scoping_stmts = [
+                        stmt for stmt in body if isinstance(stmt, (Nonlocal, Global))
+                    ]
+                    processed_body = self.process_body([
+                        stmt
+                        for stmt in body
+                        if not isinstance(stmt, (Nonlocal, Global))
+                    ])
+
+                    new_body = (
+                        (scoping_stmts + inject_unpack_helper(processed_body))
+                        if self.current_function_level == 1
+                        else (scoping_stmts + processed_body)
+                    )
+
+                finally:
+                    self.current_function_level = original_level
+
+                if isinstance(node, FunctionDef):
+                    return ensure_loc(
+                        FunctionDef(name, args, new_body, decorator_list), node
+                    )
                 return ensure_loc(
-                    FunctionDef(name, args, processed_body, decorator_list),
-                    node,
+                    AsyncFunctionDef(name, args, new_body, decorator_list), node
                 )
 
             case BinOp(
@@ -93,7 +122,7 @@ class PipeTransformer(NodeTransformer):
                 next_left = self.visit(left)
                 next_value = self.visit(value)
                 if isinstance(next_value, Call):
-                    new_args = [next_left] + next_value.args
+                    new_args = next_value.args + [next_left]
                     new_call = ensure_loc(
                         Call(next_value.func, new_args, next_value.keywords), node
                     )
@@ -172,36 +201,52 @@ class PipeTransformer(NodeTransformer):
 
             case Call(func, args, keywords):
                 self.print(f"Regular case: {left} into {right}")
-                unpack = should_unpack(func, left, self.current_globals)
-                new_args = [Starred(left, Load())] + args if unpack else [left] + args
-                return ensure_loc(Call(func, new_args, keywords), node)
+                num_req = get_num_required_args(
+                    func, self.function_params, self.context
+                )
+                return ensure_loc(
+                    Call(
+                        Name("_pyped_unpack", Load()),
+                        [left, Constant(num_req), func, *args],
+                        keywords,
+                    ),
+                    node,
+                )
 
             case Name(id=name) if name in self.function_params:
                 self.print(f"Variadic case: {name=} in {self.function_params=}")
-                unpack = (
-                    isinstance(left, Tuple)
-                    and not has_sequence_annotation(
-                        right, self.function_params, self.current_globals
-                    )
-                    and self.function_params[name].num_pos != 1
+                num_req = self.function_params[name].num_required
+                return ensure_loc(
+                    Call(
+                        Name("_pyped_unpack", Load()),
+                        [left, Constant(num_req), right],
+                        [],
+                    ),
+                    node,
                 )
-                args = [Starred(left, ctx=Load())] if unpack else [left]
-                return ensure_loc(Call(right, args, []), node)
 
             case Lambda(args=lambda_args):
-                num_pos = len(lambda_args.posonlyargs) + len(lambda_args.args)
-                has_seq_annot = has_sequence_annotation(
-                    right, self.function_params, self.current_globals
-                )
-                unpack = isinstance(left, Tuple) and not has_seq_annot and num_pos != 1
+                self.print(f"Lambda case: {left} ↦ {right}")
+                num_req = len(lambda_args.posonlyargs) + len(lambda_args.args)
                 return ensure_loc(
-                    Call(right, [Starred(left, Load())] if unpack else [left], []), node
+                    Call(
+                        Name("_pyped_unpack", Load()),
+                        [left, Constant(num_req), right],
+                        [],
+                    ),
+                    node,
                 )
 
-            case _:  # actually very common because it covers all the functions outside the decorated context
-                unpack = isinstance(left, Tuple) and not is_single_arg_func(
-                    right, self.current_globals
+            case _:
+                num_req = get_num_required_args(
+                    right, self.function_params, self.context
                 )
-                args = [Starred(left, Load())] if unpack else [left]
-                self.print(f"Fall-through case: {left} into {right}, {unpack=}")
-                return ensure_loc(Call(right, args, []), node)
+                self.print(f"Fall-through: {left} ↦ {right}, {num_req=}")
+                return ensure_loc(
+                    Call(
+                        Name("_pyped_unpack", Load()),
+                        [left, Constant(num_req), right],
+                        [],
+                    ),
+                    node,
+                )

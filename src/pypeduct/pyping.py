@@ -1,4 +1,7 @@
+# pyping.py
+
 import ast
+import builtins
 import inspect
 import linecache
 import sys
@@ -44,9 +47,21 @@ def pyped(
             nonlocal transformed
 
             if transformed is None:
-                transformed = _transform_function(
-                    obj, verbose, hofs, obj.__globals__.copy()
-                )
+                caller_frame = sys._getframe(1)
+                context = {
+                    **builtins.__dict__,
+                    **caller_frame.f_globals,
+                    **caller_frame.f_locals,
+                }
+                if verbose:
+                    print("#### Current Context Builtins ####")
+                    print(*builtins.__dict__.keys(), sep=", ")
+                    print("#### Current Context Globals ####")
+                    print(*caller_frame.f_globals.keys(), sep=", ")
+                    print("#### Current Context Locals ####")
+                    print(*caller_frame.f_locals.keys(), sep=", ")
+
+                transformed = _transform_function(obj, verbose, hofs, context)
 
             return transformed(*args, **kwargs)
 
@@ -59,9 +74,19 @@ def _transform_function(
     func: Callable,
     verbose: bool,
     hofs: dict[str, Callable],
-    current_globals: dict[str, Any],
+    context: dict[str, Any],
 ) -> Callable:
     """Performs the AST transformation using the original function's context."""
+    if func.__closure__:
+        free_vars = func.__code__.co_freevars
+        closure_vars = {
+            name: cell.cell_contents for name, cell in zip(free_vars, func.__closure__)
+        }
+        context |= closure_vars | {"__closure__": func.__closure__}
+        if verbose:
+            print("#### Closure Variables ####")
+            print(*closure_vars.keys(), sep=", ")
+
     try:
         source = inspect.getsource(func)
     except OSError:
@@ -87,7 +112,7 @@ def _transform_function(
                     new_defaults.append(original_node)
             top_level_node.args.defaults = new_defaults
 
-    tree = PipeTransformer(hofs, current_globals, verbose=verbose).visit(tree)
+    tree = PipeTransformer(hofs, context, verbose=verbose).visit(tree)
 
     top_level_node = tree.body[0]
     if isinstance(
@@ -103,10 +128,10 @@ def _transform_function(
     if closure := func.__closure__:
         free_vars = func.__code__.co_freevars
         for name, cell in zip(free_vars, closure):
-            current_globals[name] = cell.cell_contents
+            context[name] = cell.cell_contents
 
-    exec(compile(tree, filename="<pyped>", mode="exec"), current_globals)  # type: ignore
-    new_func = current_globals[func.__name__]
+    exec(compile(tree, filename="<pyped>", mode="exec"), context)  # type: ignore
+    new_func = context[func.__name__]
 
     if func.__defaults__ is not None:
         new_func.__defaults__ = func.__defaults__
@@ -137,7 +162,7 @@ def _transform_class(
     cls: Type[Any],
     verbose: bool,
     hofs: dict[str, Callable],
-    current_globals: dict[str, Any],
+    context: dict[str, Any],
 ) -> Type[Any]:
     """Transforms a class by applying AST transformations to its methods and nested classes."""
     try:
@@ -150,7 +175,7 @@ def _transform_class(
         print_code(source, original=True)
 
     tree = ast.parse(source)
-    transformer = PipeTransformer(hofs, current_globals, verbose)
+    transformer = PipeTransformer(hofs, context, verbose)
     transformed_tree = transformer.visit(tree)
 
     # Remove @pyped decorator while preserving others
@@ -165,7 +190,7 @@ def _transform_class(
     if verbose:
         print_code(ast.unparse(transformed_tree), original=False)
 
-    exec_globals = get_full_exec_context(cls, current_globals)
+    exec_globals = get_full_exec_context(cls, context)
     exec(compile(transformed_tree, filename="<pyped>", mode="exec"), exec_globals)
     return exec_globals[cls.__name__]
 
