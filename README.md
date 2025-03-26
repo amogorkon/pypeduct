@@ -25,7 +25,7 @@ pip install pypeduct
 Here's a basic example of how to use pypeduct:
 
 ```python
-from pypeduct import pipe
+from pypeduct import pyped
 
 def add_one(x):
     return x + 1
@@ -99,7 +99,30 @@ Nested classes are supported. The decorator is applied to all methods of the cla
 ## Documentation
 Check out our https://github.com/amogorkon/pypeduct/blob/main/docs/showcase.ipynb, our Pypeduct Pipeline Tuple Unpacking Specification at https://github.com/amogorkon/pypeduct/blob/main/docs/argument_unpacking_spec.md or the Howto https://github.com/amogorkon/pypeduct/blob/main/docs/howto.md and the over 350 test cases with more advanced examples!
 
-Please report any inconsistencies or ideas for better examples or tests, it'll be greatly appreciated! 
+Please report any inconsistencies or ideas for better examples or tests, it'll be greatly appreciated!
+
+## Known Limitations
+
+As exec() effectively hoists the code to the module-level, **nonlocal** statements become SyntaxErrors as there is no enclosing function scope to reference. This is the only known limitation of the library and will require some work to fix. If you need to use nonlocal variables, you can use a workaround by defining the function outside of the pipeline and then using it within the pipeline.
+
+```
+def test_pipe_with_nonlocal_keyword():
+    def outer_function():
+        nonlocal_var = 10
+
+        @pyped
+        def nonlocal_keyword_pipeline(x):
+            nonlocal nonlocal_var
+            nonlocal_var += 1
+            return x >> (lambda val: val + nonlocal_var)
+
+        return nonlocal_keyword_pipeline
+
+    nonlocal_keyword_pipeline_func = outer_function()
+    assert nonlocal_keyword_pipeline_func(5) == 16
+
+E       SyntaxError: no binding for nonlocal 'nonlocal_var' found
+```
 
 ## Contributing
 Contributions are welcome! Please open an issue or submit a pull request on GitHub.
