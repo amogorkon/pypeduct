@@ -9,15 +9,20 @@ from pypeduct import pyped as pyped
 # ===========================================
 
 
-def test_pipeline_in_nested_functions() -> int:
-    @pyped(verbose=True)
-    def outer_function() -> int:
-        def inner_function() -> int:
-            return (x := 5) >> (lambda y: y * y)
+def test_pipe_with_nonlocal_keyword():
+    def outer_function():
+        nonlocal_var = 10
 
-        return inner_function()
+        @pyped(verbose=False)
+        def nonlocal_keyword_pipeline(x):
+            nonlocal nonlocal_var
+            nonlocal_var += 1
+            return x >> (lambda val: val + nonlocal_var)
 
-    assert outer_function() == 25
+        return nonlocal_keyword_pipeline
+
+    nonlocal_keyword_pipeline_func = outer_function()
+    assert nonlocal_keyword_pipeline_func(5) == 16
 
 
 # ===========================================

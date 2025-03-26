@@ -73,6 +73,12 @@ class PipeTransformer(NodeTransformer):
             ):
                 original_level = self.current_function_level
                 self.current_function_level += 1
+                scoping_stmts = [
+                    stmt for stmt in body if isinstance(stmt, (Nonlocal, Global))
+                ]
+                other_stmts = [
+                    stmt for stmt in body if not isinstance(stmt, (Nonlocal, Global))
+                ]
 
                 try:
                     if self.current_function_level == 1:
@@ -88,19 +94,9 @@ class PipeTransformer(NodeTransformer):
                             num_pos=len(args.posonlyargs) + len(args.args),
                         )
 
-                    scoping_stmts = [
-                        stmt for stmt in body if isinstance(stmt, (Nonlocal, Global))
-                    ]
-                    processed_body = self.process_body([
-                        stmt
-                        for stmt in body
-                        if not isinstance(stmt, (Nonlocal, Global))
-                    ])
-
-                    new_body = (
-                        (scoping_stmts + inject_unpack_helper(processed_body))
-                        if self.current_function_level == 1
-                        else (scoping_stmts + processed_body)
+                    processed_body = self.process_body(other_stmts)
+                    new_body = scoping_stmts + inject_unpack_helper(
+                        scoping_stmts + processed_body
                     )
 
                 finally:

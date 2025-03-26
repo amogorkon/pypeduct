@@ -131,12 +131,14 @@ def _transform_function(
             context[name] = cell.cell_contents
 
     exec(compile(tree, filename="<pyped>", mode="exec"), context)  # type: ignore
+
     new_func = context[func.__name__]
 
     if func.__defaults__ is not None:
         new_func.__defaults__ = func.__defaults__
     if func.__kwdefaults__ is not None:
         new_func.__kwdefaults__ = func.__kwdefaults__
+
     return new_func
 
 
