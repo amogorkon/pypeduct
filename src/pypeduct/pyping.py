@@ -47,19 +47,31 @@ def pyped(
             nonlocal transformed
 
             if transformed is None:
+                module = sys.modules.get(obj.__module__)
+                # Get the caller's frame (where the decorator is applied)
                 caller_frame = sys._getframe(1)
+
                 context = {
                     **builtins.__dict__,
-                    **caller_frame.f_globals,
-                    **caller_frame.f_locals,
+                    **(module.__dict__ if module else {}),
+                    **(caller_frame.f_globals if caller_frame else {}),
+                    **(caller_frame.f_locals if caller_frame else {}),
                 }
                 if verbose:
                     print("#### Current Context Builtins ####")
                     print(*builtins.__dict__.keys(), sep=", ")
-                    print("#### Current Context Globals ####")
-                    print(*caller_frame.f_globals.keys(), sep=", ")
-                    print("#### Current Context Locals ####")
-                    print(*caller_frame.f_locals.keys(), sep=", ")
+                    print("#### Current Context Module Globals ####")
+                    print(*((module.__dict__.keys()) if module else []), sep=", ")
+                    print("#### Current Context Caller Frame Globals ####")
+                    print(
+                        *((caller_frame.f_globals.keys()) if caller_frame else []),
+                        sep=", ",
+                    )
+                    print("#### Current Context Caller Frame Locals ####")
+                    print(
+                        *((caller_frame.f_locals.keys()) if caller_frame else []),
+                        sep=", ",
+                    )
 
                 transformed = _transform_function(obj, verbose, hofs, context)
 
