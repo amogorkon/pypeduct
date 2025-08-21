@@ -5,7 +5,7 @@ import contextlib
 import inspect
 from ast import AST, Attribute, Lambda, Name, stmt
 from textwrap import dedent
-from typing import Callable, TypeVar
+from typing import Callable, TypeVar, cast
 
 NODE = (
     ast.FunctionDef
@@ -78,8 +78,9 @@ def inject_unpack_helper(body: list[stmt]) -> list[stmt]:
         return func(value, *args, **kwargs)
     """).strip()
 
-    # Parse from cleaned source
-    unpack_ast = ast.parse(unpack_source).body[0]
+    # Parse from cleaned source. Cast to ast.Module for the static checker so
+    # we can safely access `.body[0]` (runtime will be a Module).
+    unpack_ast = cast(ast.Module, ast.parse(unpack_source)).body[0]
     return [unpack_ast] + body
 
 

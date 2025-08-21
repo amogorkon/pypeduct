@@ -7,11 +7,32 @@ import linecache
 import sys
 from functools import reduce, wraps
 from textwrap import dedent
-from typing import Any, Callable, Type, TypeVar
+from typing import Any, Callable, Type, TypeVar, cast, overload
 
 from pypeduct.transformer import PipeTransformer
 
-T = TypeVar("T", bound=Callable[..., Any] | type[Any])
+F = TypeVar("F", bound=Callable[..., Any])
+C = TypeVar("C", bound=type)
+
+
+# Overloads help type checkers (like Pylance) understand that `@pyped` used
+# directly on a class returns a class (not a function), and similarly for
+# functions. This prevents diagnostics like "Argument to class must be a base class".
+@overload
+def pyped(func_or_class: F) -> F:  # type: ignore[misc]
+    ...
+
+
+@overload
+def pyped(func_or_class: C) -> C:  # type: ignore[misc]
+    ...
+
+
+@overload
+def pyped(
+    func_or_class: None = None, *, verbose: bool = False, add_hofs: dict[str, Callable] | None = None
+) -> Callable[[Any], Any]:
+    ...
 
 DEFAULT_HOF = {"filter": filter, "map": map, "reduce": reduce}
 
@@ -25,14 +46,14 @@ def print_code(code, original=True):
 
 
 def pyped(
-    func_or_class: T | None = None,
+    func_or_class: Any = None,
     *,
     verbose: bool = False,
     add_hofs: dict[str, Callable] | None = None,
-) -> T | Callable[[T], T]:
+) -> Any:
     """Decorator transforming the >> operator into pipeline operations."""
 
-    def actual_decorator(obj: T) -> T:
+    def actual_decorator(obj: F | C) -> F | C:
         hofs = DEFAULT_HOF | (add_hofs or {})
 
         if inspect.isclass(obj):
@@ -48,30 +69,15 @@ def pyped(
 
             if transformed is None:
                 module = sys.modules.get(obj.__module__)
-                # Get the caller's frame (where the decorator is applied)
-                caller_frame = sys._getframe(1)
-
                 context = {
                     **builtins.__dict__,
                     **(module.__dict__ if module else {}),
-                    **(caller_frame.f_globals if caller_frame else {}),
-                    **(caller_frame.f_locals if caller_frame else {}),
                 }
                 if verbose:
                     print("#### Current Context Builtins ####")
                     print(*builtins.__dict__.keys(), sep=", ")
                     print("#### Current Context Module Globals ####")
                     print(*((module.__dict__.keys()) if module else []), sep=", ")
-                    print("#### Current Context Caller Frame Globals ####")
-                    print(
-                        *((caller_frame.f_globals.keys()) if caller_frame else []),
-                        sep=", ",
-                    )
-                    print("#### Current Context Caller Frame Locals ####")
-                    print(
-                        *((caller_frame.f_locals.keys()) if caller_frame else []),
-                        sep=", ",
-                    )
 
                 transformed = _transform_function(obj, verbose, hofs, context)
 
@@ -116,7 +122,9 @@ def _transform_function(
             for default in func.__defaults__:
                 try:
                     default_repr = repr(default)
-                    parsed_node = ast.parse(default_repr, mode="eval").body
+                    # ast.parse(..., mode='eval') returns an Expression node whose
+                    # .body attribute is the parsed expression; cast for the type checker.
+                    parsed_node = cast(ast.Expression, ast.parse(default_repr, mode="eval")).body
                     new_defaults.append(parsed_node)
                 except SyntaxError:
                     original_index = len(new_defaults)
@@ -124,7 +132,9 @@ def _transform_function(
                     new_defaults.append(original_node)
             top_level_node.args.defaults = new_defaults
 
-    tree = PipeTransformer(hofs, context, verbose=verbose).visit(tree)
+    # NodeTransformer.visit can return an AST node; for our usage we
+    # expect a Module so cast it to satisfy the static checker.
+    tree = cast(ast.Module, PipeTransformer(hofs, context, verbose=verbose).visit(tree))
 
     top_level_node = tree.body[0]
     if isinstance(
@@ -190,7 +200,10 @@ def _transform_class(
 
     tree = ast.parse(source)
     transformer = PipeTransformer(hofs, context, verbose)
-    transformed_tree = transformer.visit(tree)
+    # Ensure the transformer result is treated as a Module for downstream
+    # attribute access (e.g. .body[0]). We cast for the type checker; at
+    # runtime this will be the parsed AST Module.
+    transformed_tree = cast(ast.Module, transformer.visit(tree))
 
     # Remove @pyped decorator while preserving others
     class_node = transformed_tree.body[0]

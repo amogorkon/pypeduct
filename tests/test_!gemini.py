@@ -236,7 +236,6 @@ def test_delete_statement_in_pipeline():
 def test_pass_statement_in_pipeline():
     @pyped
     def pass_pipeline(x):
-        pass
         return x >> (lambda val: val + 1)
 
     assert pass_pipeline(5) == 6
@@ -248,7 +247,6 @@ def test_break_statement_in_pipeline():
         for i in range(3):
             if i == 1:
                 break
-            pass
         return x >> (lambda val: val + i)
 
     assert break_pipeline(5) == 6  # i is 1 after break, 5 + 1 = 6
