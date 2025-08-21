@@ -131,5 +131,20 @@ Contributions are welcome! Please open an issue or submit a pull request on GitH
 This project is licensed under the MIT License. See the LICENSE file for details.
 
 
-## Office Hours
-You can contact me one-on-one! Check my [office hours](https://calendly.com/amogorkon/officehours) to set up a meeting :-)
+## Versioning Scheme
+
+ZVIC uses a CalVer versioning scheme: `YYYY.0W[.patchN/devN/rcN]`, where:
+- `YYYY` is the year
+- `0W` is the zero-padded ISO week number
+- Optional `.patchN`, `.devN`, `.rcN` for patches, dev, or release candidates
+
+For example, `2025.26` corresponds to week 26 of 2025.
+
+# Office Hours
+You can also contact me one-on-one! Check my [office hours](https://calendly.com/amogorkon/officehours) to set up a meeting :-)
+
+If you have questions also feel free to use the github issues or the [ZVIC Discussions](https://github.com/amogorkon/ZVIC/discussions).
+
+
+
+***Enjoy!***
